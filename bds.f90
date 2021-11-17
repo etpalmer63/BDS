@@ -13,7 +13,7 @@ module bds_module
 
 contains
 
-  subroutine bds(mla,s,sn,umac,dx,dt,is_conserv)
+  subroutine bds(mla,s,sn,umac,dx,dt,is_conserv)  ! the variables to pass in
 
     type(ml_layout), intent(in   ) :: mla
     type(multifab) , intent(in   ) :: s(:)
