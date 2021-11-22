@@ -13,6 +13,10 @@ include ../Source/Make.package
 VPATH_LOCATIONS  += ../Source
 INCLUDE_LOCATIONS += ../Source
 
+include ../BaseLib/Make.package
+VPATH_LOCATIONS  += ../BaseLib
+INCLUDE_LOCATIONS += ../BaseLib
+
 include $(AMREX_HOME)/Src/Base/Make.package
 
 include $(AMREX_HOME)/Tools/GNUMake/Make.rules
