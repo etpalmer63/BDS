@@ -1,9 +1,10 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_ParmParse.H>
 
-#include "myfunc.H"
+#include "bds.H"
 
 using namespace amrex;
+void main_main();
 
 int main (int argc, char* argv[])
 {
@@ -108,7 +109,7 @@ void main_main ()
     geom.define(domain, real_box, CoordSys::cartesian, is_periodic);
 
     // extract dx from the geometry object
-    GpuArray<Real,AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    GpuArray<Real,AMREX_SPACEDIM> const dx = geom.CellSizeArray();
 
     // Nghost = number of ghost cells for each array
     int Nghost = 1;
@@ -119,15 +120,18 @@ void main_main ()
     // How Boxes are distrubuted among MPI processes
     DistributionMapping dm(ba);
 
+    //
+    Array1D<const bool, 1, AMREX_SPACEDIM> is_conserv = {true, true, true};
     // we allocate two phi multifabs; one will store the old state, the other the new.
 
     //initialize data on the multifab
-    MultiFab sOld(ba, dm, Ncomp, Nghost); 
-    MultiFab sNew(ba, dm, Ncomp, Nghost);
+    MultiFab s_old_mf(ba, dm, Ncomp, Nghost); 
+    MultiFab s_new_mf(ba, dm, Ncomp, Nghost);
 
-    MultiFab uVel(ba, dm, Ncomp, Nghost);
-    MultiFab vVel(ba, dm, Ncomp, Nghost);
-    MultiFab wVel(ba, dm, Ncomp, Nghost);
+    MultiFab umac_mf(ba, dm, 3, Nghost);
+    //MultiFab uVel(ba, dm, Ncomp, Nghost);
+    //MultiFab vVel(ba, dm, Ncomp, Nghost);
+    //MultiFab wVel(ba, dm, Ncomp, Nghost);
 
     // time = starting time in the simulation
     Real time = 0.0;
@@ -140,14 +144,15 @@ void main_main ()
 
 
     // loop over boxes
-    for (MFIter mfi(sOld); mfi.isValid(); ++mfi)
+    for (MFIter mfi(s_old_mf); mfi.isValid(); ++mfi)
     {
         const Box& bx = mfi.validbox();
 
-        Array4<Real> const& u_vel = uVel.array(mfi);
-        Array4<Real> const& v_vel = vVel.array(mfi);
-        Array4<Real> const& w_vel = wVel.array(mfi);
-        Array4<Real> const& S_old = sOld.array(mfi);
+        Array4<Real> const& umac = umac_mf.array(mfi);
+        Array4<Real> const& S_old = s_old_mf.array(mfi);
+        //Array4<Real> const& v_vel = vmac.array(mfi);
+        //Array4<Real> const& w_vel = wVel.array(mfi);
+        //Array4<Real> const& S_old = s_old_mf.array(mfi);
 
         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
         {
@@ -155,9 +160,9 @@ void main_main ()
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
 
-            u_vel(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
-            v_vel(i,j,k) = 0.25;
-            w_vel(i,j,k) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))); 
+            umac(i,j,k,1) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
+            umac(i,j,k,2) = 0.25;
+            umac(i,j,k,3) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))); 
 
             Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
@@ -177,18 +182,19 @@ void main_main ()
     {
         int step = 0;
         const std::string& pltfile = amrex::Concatenate("plt",step,5);
-        WriteSingleLevelPlotfile(pltfile, sOld, {"S"}, geom, time, 0);
+        WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
     }
 
-/*
 
     for (int step = 1; step <= nsteps; ++step)
-
+    {
         // fill periodic ghost cells
-        phi_old.FillBoundary(geom.periodicity());
+        s_old_mf.FillBoundary(geom.periodicity());
 
+        bds(ba, geom, dm, 1, s_old_mf, s_new_mf, umac_mf, dx, dt, is_conserv);
         // new_phi = old_phi + dt * Laplacian(old_phi)
         // loop over boxes
+    /*
         for ( MFIter mfi(phi_old); mfi.isValid(); ++mfi )
         {
             const Box& bx = mfi.validbox();
@@ -216,12 +222,12 @@ void main_main ()
                         );
             });
         }
-
+*/
         // update time
         time = time + dt;
 
         // copy new solution into old solution
-        MultiFab::Copy(phi_old, phi_new, 0, 0, 1, 0);
+        MultiFab::Copy(s_old_mf, s_new_mf, 0, 0, 1, 0);
 
         // Tell the I/O Processor to write out which step we're doing
         amrex::Print() << "Advanced step " << step << "\n";
@@ -230,8 +236,7 @@ void main_main ()
         if (plot_int > 0 && step%plot_int == 0)
         {
             const std::string& pltfile = amrex::Concatenate("plt",step,5);
-            WriteSingleLevelPlotfile(pltfile, phi_new, {"phi"}, geom, time, step);
+            WriteSingleLevelPlotfile(pltfile, s_new_mf, {"phi"}, geom, time, step);
         }
     }
- */
 }
