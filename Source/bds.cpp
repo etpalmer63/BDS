@@ -143,6 +143,8 @@ void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
 
     eps = 1.0e-10;
 
+   
+
     // bicubic interpolation to corner points
     // (i,j,k) refers to lower corner of cell
     for(int j = lo(2)-1; j<=hi(2)+2; ++j){
@@ -309,6 +311,9 @@ void bdsslope_3d ( //lo,hi,s,ng_s,slope,ng_c,dx)
     c2 = (49.0 /1728.0);
     c3 = (7.0  /1728.0);
     c4 = (1.0  /1728.0);
+
+    //HACK -- remember to print out indices to ensure loops and box and hitting the right places.
+    // as sanity check
 
     for ( MFIter mfi(s); mfi.isValid(); ++mfi){ 
             const Box& bx = mfi.validbox(); //HACK -- probably wrong box
