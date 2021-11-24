@@ -16,14 +16,14 @@ const bool limit_slopes = true;
 void bds( //mla,s,sn,umac,dx,dt,is_conserv){ 
 
     BoxArray& ba, const Geometry& geom, const DistributionMapping& dmap, int nlevs,//type(ml_layout), intent(in   ) :: mla
-    const MultiFab& s,
-    MultiFab& sn,
-    const MultiFab& umac, 
+    const MultiFab& s_mf,
+    MultiFab& sn_mf,
+    const MultiFab& umac_mf, 
     GpuArray<Real, AMREX_SPACEDIM> const& dx, Real dt, 
     Array1D<const bool, 1, AMREX_SPACEDIM> const& is_conserv){
 
     // this will hold slx, sly, and slxy
-    MultiFab slope(ba ,dmap,7,1);   //2D -- 3 components, 3D -- 7 components
+    MultiFab slope_mf(ba ,dmap,7,1);   //2D -- 3 components, 3D -- 7 components
 
     //Array4< const Real> sop = s.array();
     //Array4<       Real> snp = sn.array();
@@ -93,10 +93,10 @@ void bds( //mla,s,sn,umac,dx,dt,is_conserv){
              wadvp  => dataptr(umac(n,3), i)
              // only advancing the tracer
              for(int comp=2; comp<=s(n)%nc; ++comp){  */
-               // bdsslope_3d(lo, hi,
-               //                  s, ng_s,
-               //                  slope, ng_c,
-               //                  dx)
+                bdsslope_3d(lo, hi,
+                                 s_mf, ng_s,
+                                 slope_mf, ng_c,
+                                 dx, ba, geom, dmap)
                // 
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
@@ -270,40 +270,35 @@ void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
 
        }
     }
-
     //deallocate(sint); //HACK -- wrong, just trying to compile
-
 }  //end subroutine bdsslope_2d
+#endif
 
-void bdsslope_3d ( //lo,hi,s,ng_s,slope,ng_c,dx)
+void bdsslope_3d ( 
 
-    //use probin_module, only: limit_slopes //global constant
+        //use probin_module, only: limit_slopes //global constant
 
-    Array1D<const int > const& lo,    Array1D<const int> const& hi,
-    MultiFab const& s_mf,     const int ng_s,
-    MultiFab const& slope_mf, const int ng_c,
-    Array1D<const Real> const& dx){
+        GpuArray<Real, AMREX_SPACEDIM> const& lo,    GpuArray<Real, AMREX_SPACEDIM> const& hi,
+        MultiFab const& s_mf,     const int ng_s,
+        MultiFab const& slope_mf, const int ng_c,
+        GpuArray<Real, AMREX_SPACEDIM> const& dx, 
+        BoxArray& ba, Geometry& geom, 
+        DistributionMapping& dmap){
 
     // local variables
-    Array3D<Real, 1, 3, 1, 3, 1,3> sint; //HACK -- wrong, just trying to compile
-    MutiFab sint;
+    MultiFab sint_mf(ba, dmap, 1, 1);
+    //MultiFab slope_mf(ba, dmap, 7, 1);
 
-    Array1D<Real, 1, 8> diff;
-    Array1D<Real, 1, 8> smin;
-    Array1D<Real, 1, 8> smax;
-    Array1D<Real, 1, 8> sc;
-
+    // HACK other local variables moved inside MFIter
     Real c1,c2,c3,c4;
     Real hx,hy,hz,eps;
-    Real sumloc,redfac,redmax,div,kdp,sumdif,sgndif;
-    int i,j,k,ll,mm;
 
     // nodal with one ghost cell
     //allocate(sint(lo(1)-1:hi(1)+2,lo(2)-1:hi(2)+2,lo(3)-1:hi(3)+2))
 
-    hx = dx(1);
-    hy = dx(2);
-    hz = dx(3);
+    hx = dx[0];
+    hy = dx[1];
+    hz = dx[2];
 
     eps = 1.0e-10;
 
@@ -314,14 +309,23 @@ void bdsslope_3d ( //lo,hi,s,ng_s,slope,ng_c,dx)
 
     //HACK -- remember to print out indices to ensure loops and box and hitting the right places.
     // as sanity check
+    for(int k = lo[2]-1; k<=hi[2]+2; ++k){ 
+    for(int j = lo[1]-1; j<=hi[1]+2; ++j){
+    for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; }}}
 
-    for ( MFIter mfi(s); mfi.isValid(); ++mfi){ 
-            const Box& bx = mfi.validbox(); //HACK -- probably wrong box
-            const Array4<Real>& s = s_mf.array(mfi);
-            const Array4<Real>& sint = sint_mf.array(mfi);
-    ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
-    // tricubic interpolation to corner points
-    // (i,j,k) refers to lower corner of cell
+
+    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
+
+        const Box& bx = mfi.validbox(); //HACK -- probably wrong box
+
+        Array4<const Real> const& s = s_mf.array(mfi);
+        Array4<Real>  const& sint = sint_mf.array(mfi);
+        Array4<Real>  const& slope = slope_mf.array(mfi);
+
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+            Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; 
+        // tricubic interpolation to corner points
+        // (i,j,k) refers to lower corner of cell
              sint(i,j,k) = c1*( s(i  ,j  ,k  ) + s(i-1,j  ,k  ) + s(i  ,j-1,k  )
                                +s(i  ,j  ,k-1) + s(i-1,j-1,k  ) + s(i-1,j  ,k-1)
                                +s(i  ,j-1,k-1) + s(i-1,j-1,k-1) )
@@ -344,14 +348,28 @@ void bdsslope_3d ( //lo,hi,s,ng_s,slope,ng_c,dx)
                           -c4*( s(i-2,j+1,k+1) + s(i+1,j+1,k+1) + s(i-2,j-2,k+1)
                                +s(i+1,j-2,k+1) + s(i-2,j+1,k-2) + s(i+1,j+1,k-2)
                                +s(i-2,j-2,k-2) + s(i+1,j-2,k-2) );
-    }); }
+        }); 
 
-    for(int k = lo(3)-1; k<=hi(3)+1; ++k){
-       for(int j = lo(2)-1; j<=hi(2)+1; ++j){
-          for(int i = lo(1)-1; i<=hi(1)+1; ++i){
+    
+
+        for(int k = lo[2]-1; k<=hi[2]+1; ++k){ 
+        for(int j = lo[1]-1; j<=hi[1]+1; ++j){
+        for(int i = lo[0]-1; i<=hi[0]+1; ++i){ 
+            Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; }}}
+
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+            Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; 
+            
+
+            // Variables local to this loop
+            Array1D<Real, 1, 8> diff;
+            Array1D<Real, 1, 8> smin;
+            Array1D<Real, 1, 8> smax;
+            Array1D<Real, 1, 8> sc; 
+            Real sumloc,redfac,redmax,div,kdp,sumdif,sgndif;
 
              // compute initial estimates of slopes from unlimited corner points
-
              // sx
              slope(i,j,k,1) = 0.25*( ( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
                                         +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1))
@@ -492,7 +510,7 @@ void bdsslope_3d ( //lo,hi,s,ng_s,slope,ng_c,dx)
              for(int ll = 1; ll<=3; ++ll){
                 sumloc = 0.125*(sc(1)+sc(2)+sc(3)+sc(4)+sc(5)+sc(6)+sc(7)+sc(8));
                 sumdif = (sumloc - s(i,j,k))*8.0;
-                sgndif = sign(1.0,sumdif);
+                sgndif = std::copysign(1.0,sumdif); //HACK replaced f90 sign
 
                 for(int mm=1; mm<=8; ++mm){
                    diff(mm) = (sc(mm) - s(i,j,k))*sgndif;
@@ -510,7 +528,7 @@ void bdsslope_3d ( //lo,hi,s,ng_s,slope,ng_c,dx)
                    if (kdp<1) {
                       div = 1.0;
                    } else {
-                      div = dble(kdp);
+                      div = kdp;         //HACK don't think dble is needed anymore
                    }
 
                    if (diff(mm)>eps) {
@@ -577,13 +595,13 @@ void bdsslope_3d ( //lo,hi,s,ng_s,slope,ng_c,dx)
 
              }
 
-          }
-       }
-    }
+          }); //ParallelFor
+       } //MFIter
 
 
 } // end subroutine bdsslope_3d
 
+#if (0)
 void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
 
     Array1D<const int > const& lo,    Array1D<const int> const& hi, 
