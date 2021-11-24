@@ -1,21 +1,21 @@
-#include <AMReX_Array.H> //module bds_module
-#include <AMReX_MultiFab.H> //module bds_module
-#include <AMReX_REAL.H> //module bds_module
-//  use multifab_module
-//  use ml_layout_module
-//  use define_bc_module
+#include <AMReX_Array.H> 
+#include <AMReX_MultiFab.H> 
+#include <AMReX_REAL.H> 
 
-//  implicit none
+#include "bds.H"
 
-//  private
 
-using namespace amrex;  //public :: bds
 const bool limit_slopes = true;
-//contains
 
-void bds( //mla,s,sn,umac,dx,dt,is_conserv){ 
 
-    BoxArray& ba, const Geometry& geom, const DistributionMapping& dmap, int nlevs,//type(ml_layout), intent(in   ) :: mla
+
+using namespace amrex;  
+
+
+
+void bds( 
+
+    const BoxArray& ba, const Geometry& geom, const DistributionMapping& dmap, int nlevs,
     const MultiFab& s_mf,
     MultiFab& sn_mf,
     const MultiFab& umac_mf, 
@@ -23,7 +23,7 @@ void bds( //mla,s,sn,umac,dx,dt,is_conserv){
     Array1D<const bool, 1, AMREX_SPACEDIM> const& is_conserv){
 
     // this will hold slx, sly, and slxy
-    MultiFab slope_mf(ba ,dmap,7,1);   //2D -- 3 components, 3D -- 7 components
+    MultiFab slope_mf(ba ,dmap,7,1);   //HACK--Fix later wMacro 2D -- 3 components, 3D -- 7 components
 
     //Array4< const Real> sop = s.array();
     //Array4<       Real> snp = sn.array();
@@ -96,7 +96,7 @@ void bds( //mla,s,sn,umac,dx,dt,is_conserv){
                 bdsslope_3d(lo, hi,
                                  s_mf, ng_s,
                                  slope_mf, ng_c,
-                                 dx, ba, geom, dmap)
+                                 dx, ba, geom, dmap);
                // 
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
@@ -280,14 +280,14 @@ void bdsslope_3d (
 
         GpuArray<Real, AMREX_SPACEDIM> const& lo,    GpuArray<Real, AMREX_SPACEDIM> const& hi,
         MultiFab const& s_mf,     const int ng_s,
-        MultiFab const& slope_mf, const int ng_c,
+        MultiFab& slope_mf, const int ng_c,
         GpuArray<Real, AMREX_SPACEDIM> const& dx, 
-        BoxArray& ba, Geometry& geom, 
-        DistributionMapping& dmap){
+        const BoxArray& ba, const Geometry& geom, 
+        const DistributionMapping& dmap){
 
     // local variables
-    MultiFab sint_mf(ba, dmap, 1, 1);
-    //MultiFab slope_mf(ba, dmap, 7, 1);
+    MultiFab sint_mf(ba, dmap, 1, 1); //HACK -- temp for compile
+    
 
     // HACK other local variables moved inside MFIter
     Real c1,c2,c3,c4;
@@ -311,7 +311,7 @@ void bdsslope_3d (
     // as sanity check
     for(int k = lo[2]-1; k<=hi[2]+2; ++k){ 
     for(int j = lo[1]-1; j<=hi[1]+2; ++j){
-    for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; }}}
+    for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k; }}} Print() << std::endl;
 
 
     for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
@@ -323,7 +323,7 @@ void bdsslope_3d (
         Array4<Real>  const& slope = slope_mf.array(mfi);
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
-            Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; 
+            Print() << "i= " << i << "j= " << j << "k= " << k; 
         // tricubic interpolation to corner points
         // (i,j,k) refers to lower corner of cell
              sint(i,j,k) = c1*( s(i  ,j  ,k  ) + s(i-1,j  ,k  ) + s(i  ,j-1,k  )
@@ -349,17 +349,17 @@ void bdsslope_3d (
                                +s(i+1,j-2,k+1) + s(i-2,j+1,k-2) + s(i+1,j+1,k-2)
                                +s(i-2,j-2,k-2) + s(i+1,j-2,k-2) );
         }); 
-
+           Print() << std::endl;
     
 
         for(int k = lo[2]-1; k<=hi[2]+1; ++k){ 
         for(int j = lo[1]-1; j<=hi[1]+1; ++j){
         for(int i = lo[0]-1; i<=hi[0]+1; ++i){ 
-            Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; }}}
-
+            Print() << "i= " << i << "j= " << j << "k= " << k; }}}
+            Print() << std::endl; 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
-            Print() << "i= " << i << "j= " << j << "k= " << k << std::endl; 
+            Print() << "i= " << i << "j= " << j << "k= " << k; 
             
 
             // Variables local to this loop
@@ -596,6 +596,7 @@ void bdsslope_3d (
              }
 
           }); //ParallelFor
+            Print() << std::endl; 
        } //MFIter
 
 
