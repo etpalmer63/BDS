@@ -15,15 +15,13 @@ using namespace amrex;
 
 void bds( 
 
-    const BoxArray& ba, const Geometry& geom, const DistributionMapping& dmap, int nlevs,
+    const Geometry& geom,
     const MultiFab& s_mf,
     MultiFab& sn_mf,
-    const MultiFab& umac_mf, 
-    GpuArray<Real, AMREX_SPACEDIM> const& dx, Real dt, 
-    Array1D<const bool, 1, AMREX_SPACEDIM> const& is_conserv){
-
-    // this will hold slx, sly, and slxy
-    MultiFab slope_mf(ba ,dmap,7,1);   //HACK--Fix later wMacro 2D -- 3 components, 3D -- 7 components
+    std::array<MultiFab, AMREX_SPACEDIM >& umac,
+    Real dt,
+    int comp,
+    int is_conserv) {
 
     //Array4< const Real> sop = s.array();
     //Array4<       Real> snp = sn.array();
@@ -32,8 +30,15 @@ void bds(
     //Array4< const Real> vadvp = umac.array();
     //Array4< const Real> wadvp = umac.array();
 
-    int dm,ng_s,ng_c,ng_u,n,i,comp;
-    GpuArray<Real, AMREX_SPACEDIM> lo = geom.ProbLoArray(); GpuArray<Real, AMREX_SPACEDIM> hi = geom.ProbHiArray(); //integer :: lo(mla%dim),hi(mla%dim)
+    int dm,ng_s,ng_c,ng_u,n,i;
+
+    BoxArray ba = s_mf.boxArray();
+    DistributionMapping dmap = s_mf.DistributionMapping();
+    GpuArray<Real,AMREX_SPACEDIM> dx = geom.CellSizeArray();
+
+    // this will hold slx, sly, and slxy
+    int nslope = (AMREX_SPACEDIM == 2) ? 3 : 7;
+    MultiFab slope_mf(ba,dmap,nslope,1);   //HACK--Fix later wMacro 2D -- 3 components, 3D -- 7 components
 
     //nlevs = mla%nlevel
     //dm = mla%dim
@@ -60,9 +65,6 @@ void bds(
        }
     }*/
 
-    ng_s = 1; //s(1)%ng
-    ng_c = 1; //slope(1)%ng
-    ng_u = 1; //umac(1,1)%ng
 
 /*    for(int n=1;n<=nlevs;++n){
        for( int i = 1;i<s(n)%nboxes; ++i){
@@ -93,10 +95,10 @@ void bds(
              wadvp  => dataptr(umac(n,3), i)
              // only advancing the tracer
              for(int comp=2; comp<=s(n)%nc; ++comp){  */
-                bdsslope_3d(lo, hi,
-                                 s_mf, ng_s,
-                                 slope_mf, ng_c,
-                                 dx, ba, geom, dmap);
+                bdsslope_3d(
+                                 s_mf,
+                                 slope_mf,
+                                 dx, geom);
                // 
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
@@ -274,28 +276,20 @@ void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
 }  //end subroutine bdsslope_2d
 #endif
 
-void bdsslope_3d ( 
+void bdsslope_3d (MultiFab const& s_mf,
+                  MultiFab& slope_mf,
+                  const Geometry& geom){
 
-        //use probin_module, only: limit_slopes //global constant
-
-        GpuArray<Real, AMREX_SPACEDIM> const& lo,    GpuArray<Real, AMREX_SPACEDIM> const& hi,
-        MultiFab const& s_mf,     const int ng_s,
-        MultiFab& slope_mf, const int ng_c,
-        GpuArray<Real, AMREX_SPACEDIM> const& dx, 
-        const BoxArray& ba, const Geometry& geom, 
-        const DistributionMapping& dmap){
+    BoxArray ba = s_mf.boxArray();
+    DistributionMapping dmap = s_mf.DistributionMapping();
+    GpuArray<Real,AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    
+    MultiFab sint_mf(convert(ba,IntVect(AMREX_D_DECL(1,1,1))), dmap, 1, 1);
 
     // local variables
-    MultiFab sint_mf(ba, dmap, 1, 1); //HACK -- temp for compile
-    
-
-    // HACK other local variables moved inside MFIter
     Real c1,c2,c3,c4;
     Real hx,hy,hz,eps;
-
-    // nodal with one ghost cell
-    //allocate(sint(lo(1)-1:hi(1)+2,lo(2)-1:hi(2)+2,lo(3)-1:hi(3)+2))
-
+    
     hx = dx[0];
     hy = dx[1];
     hz = dx[2];
@@ -307,25 +301,25 @@ void bdsslope_3d (
     c3 = (7.0  /1728.0);
     c4 = (1.0  /1728.0);
 
-    //HACK -- remember to print out indices to ensure loops and box and hitting the right places.
-    // as sanity check
-    for(int k = lo[2]-1; k<=hi[2]+2; ++k){ 
-    for(int j = lo[1]-1; j<=hi[1]+2; ++j){
-    for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k; }}} Print() << std::endl;
+    for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){ 
 
+        const Box& bx = mfi.growntilebox(1);
 
-    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
-
-        const Box& bx = mfi.validbox(); //HACK -- probably wrong box
-
-        Array4<const Real> const& s = s_mf.array(mfi);
-        Array4<Real>  const& sint = sint_mf.array(mfi);
-        Array4<Real>  const& slope = slope_mf.array(mfi);
+        Array4<const Real> const& s = s_mf.array(mfi,comp);
+        Array4<      Real> const& sint = sint_mf.array(mfi);
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
-            Print() << "i= " << i << "j= " << j << "k= " << k; 
-        // tricubic interpolation to corner points
-        // (i,j,k) refers to lower corner of cell
+
+#if (AMREX_SPACEDIM == 2)
+             // bicubic interpolation to corner points
+             // (i,j,k) refers to lower corner of cell
+             sint(i,j) = (s(i-2,j-2) + s(i-2,j+1) + s(i+1,j-2) + s(i+1,j+1)
+                    - 7.*(s(i-2,j-1) + s(i-2,j  ) + s(i-1,j-2) + s(i  ,j-2) +
+                          s(i-1,j+1) + s(i  ,j+1) + s(i+1,j-1) + s(i+1,j  ))
+                   + 49.*(s(i-1,j-1) + s(i  ,j-1) + s(i-1,j  ) + s(i  ,j  )) ) / 144.;
+#elif (AMREX_SPACEDIM == 3)
+             // tricubic interpolation to corner points
+             // (i,j,k) refers to lower corner of cell
              sint(i,j,k) = c1*( s(i  ,j  ,k  ) + s(i-1,j  ,k  ) + s(i  ,j-1,k  )
                                +s(i  ,j  ,k-1) + s(i-1,j-1,k  ) + s(i-1,j  ,k-1)
                                +s(i  ,j-1,k-1) + s(i-1,j-1,k-1) )
@@ -348,7 +342,44 @@ void bdsslope_3d (
                           -c4*( s(i-2,j+1,k+1) + s(i+1,j+1,k+1) + s(i-2,j-2,k+1)
                                +s(i+1,j-2,k+1) + s(i-2,j+1,k-2) + s(i+1,j+1,k-2)
                                +s(i-2,j-2,k-2) + s(i+1,j-2,k-2) );
-        }); 
+#endif
+        });
+    }
+
+
+    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
+
+        const Box& bx = mfi.growntilebox(1);
+
+        Array4<      Real> const& slope = slope_mf.array(mfi);
+        Array4<const Real> const& s = s_mf.array(mfi,comp);
+
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+            Array1D<Real, 1, 8> sc;
+            Array1D<Real, 1, 8> smin;
+            Array1D<Real, 1, 8> smax;
+                
+            // fill in
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
+        });
+
+    }
+        
            Print() << std::endl;
     
 
