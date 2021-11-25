@@ -284,7 +284,7 @@ void bdsslope_3d (MultiFab const& s_mf,
     DistributionMapping dmap = s_mf.DistributionMapping();
     GpuArray<Real,AMREX_SPACEDIM> dx = geom.CellSizeArray();
     
-    MultiFab sint_mf(convert(ba,IntVect(AMREX_D_DECL(1,1,1))), dmap, 1, 1);
+    MultiFab sint_mf(convert(ba,IntVect(AMREX_D_DECL(1,1,1))), dmap, 1, 1); //different type of multifab, from ba
 
     // local variables
     Real c1,c2,c3,c4;
@@ -346,7 +346,7 @@ void bdsslope_3d (MultiFab const& s_mf,
         });
     }
 
-
+//Need separate multifab because the underlying box is different -- cell vs. nodal
     for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
 
         const Box& bx = mfi.growntilebox(1);
@@ -402,7 +402,7 @@ void bdsslope_3d (MultiFab const& s_mf,
 
              // compute initial estimates of slopes from unlimited corner points
              // sx
-             slope(i,j,k,1) = 0.25*( ( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
+/* need based indexing*/ slope(i,j,k,1) = 0.25*( ( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
                                         +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1))
                                       -( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
                                         +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1)) ) / hx;
