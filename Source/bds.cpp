@@ -268,7 +268,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
         //const DistributionMapping& dmap){
 
     BoxArray ba = s_mf.boxArray();
-    DistributionMapping dmap = s_mf.DistributionMap();
+    const DistributionMapping dmap = s_mf.DistributionMap();
     GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables
@@ -693,9 +693,8 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
 
              } //if(limit_slopes)
 #endif
-
-          }); //ParallelFor
-       } //MFIter
+        }); //ParallelFor
+    } //MFIter
 } //subroutine bdsslope
 
 #if (0)
