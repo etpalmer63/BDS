@@ -36,43 +36,17 @@ void bds (const MultiFab& s_mf,
     //Array4< const Real> vadvp = umac.array();
     //Array4< const Real> wadvp = umac.array();
 
-    int dm,ng_s,ng_c,ng_u,n,i;
+    //int dm,ng_s,ng_c,ng_u,n,i;
 
-    GpuArray<Real, AMREX_SPACEDIM> lo = geom.ProbLoArray(); GpuArray<Real, AMREX_SPACEDIM> hi = geom.ProbHiArray(); //integer :: lo(mla%dim),hi(mla%dim)
+    BoxArray ba = s_mf.boxArray();
+    DistributionMapping dmap = s_mf.DistributionMapping();
+    GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
-   
     // this will hold slx, sly, and slxy
     int nslope = (AMREX_SPACEDIM == 2) ? 3 : 7;
     MultiFab slope_mf(ba,dmap,nslope,1);  
     
-    //nlevs = mla%nlevel
-    //dm = mla%dim
 
- /* if (dm == 2) {
-       // 3 components and 1 ghost cell
-       // component 1 = slx
-       // component 2 = sly
-       // component 3 = slxy
-       for(int n=1; n<=nlevs; ++n ){
-          call multifab_build(slope(n),mla%la(n),3,1)
-       }
-    } else if (dm == 3) {  
-       // 7 components and 1 ghost cell
-       // component 1 = slx
-       // component 2 = sly
-       // component 3 = slz
-       // component 4 = slxy
-       // component 5 = slxz
-       // component 6 = slyz
-       // component 7 = slxyz
-       for(int n=1; n<=nlevs; ++n ){
-          call multifab_build(slope(n),mla%la(n),7,1) // MultiFab, la(layout?), nc(number of components), ng(ghosts?) 
-       }
-    }*/
-
-    ng_s = 1; //s(1)%ng
-    ng_c = 1; //slope(1)%ng
-    ng_u = 1; //umac(1,1)%ng
 
 /*    for(int n=1;n<=nlevs;++n){
        for( int i = 1;i<s(n)%nboxes; ++i){
@@ -103,10 +77,8 @@ void bds (const MultiFab& s_mf,
              wadvp  => dataptr(umac(n,3), i)
              // only advancing the tracer
              for(int comp=2; comp<=s(n)%nc; ++comp){  */
-                bdsslope(      s_mf, 
-                                 slope_mf, 
-                                 dx, dmap);
-               // 
+                bdsslope(s_mf, slope_mf, dx, dmap);
+                
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
                //                 slope, ng_c,
@@ -122,6 +94,7 @@ void bds (const MultiFab& s_mf,
     } */
 
 }  //end subroutine bds
+
 #if (0)
 void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
 
