@@ -152,10 +152,10 @@ void main_main ()
     {
         const Box& bx = mfi.validbox();
 
-        Array4<const Real> const& umac = umac_mf[0].array(mfi);  //HACK -- later may need to adjusted.
-        Array4<const Real> const& vmac = umac_mf[1].array(mfi);
-        Array4<const Real> const& wmac = umac_mf[2].array(mfi);
-        Array4<      Real> const& S_old = s_old_mf.array(mfi);
+        Array4< Real> const& umac = umac_mf[0].array(mfi);  //HACK -- later may need to adjusted.
+        Array4< Real> const& vmac = umac_mf[1].array(mfi);
+        Array4< Real> const& wmac = umac_mf[2].array(mfi);
+        Array4< Real> const& S_old = s_old_mf.array(mfi);
         //Array4<Real> const& v_vel = vmac.array(mfi);
         //Array4<Real> const& w_vel = wVel.array(mfi);
         //Array4<Real> const& S_old = s_old_mf.array(mfi);
@@ -167,9 +167,9 @@ void main_main ()
             Real z = (k+0.5) * dx[2];
 
             //HACK -- this will probably need to be reworded to create points on the faces
-            umac(i,j,k,0) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
-            vmac(i,j,k,0) = 0.25;
-            wmac(i,j,k,0) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))); 
+            umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
+            vmac(i,j,k) = 0.25;
+            wmac(i,j,k) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))); 
 
             Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
