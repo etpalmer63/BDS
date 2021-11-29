@@ -7,25 +7,18 @@
 
 
 
-void bds (const amrex::BoxArray& ba,
-          const amrex::Geometry& geom,
-          const amrex::DistributionMapping& dmap,
-          int nlevs,
-          const amrex::MultiFab& s_mf,
+void bds (const amrex::MultiFab& s_mf,
+          const amrex::Geometry& geom,      
           amrex::MultiFab& sn_mf,
-          const amrex::MultiFab& umac_mf,
+          std::array<amrex::MultiFab, AMREX_SPACEDIM>& umac_mf,
           amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx, amrex::Real dt,
           amrex::Array1D<const bool, 1, AMREX_SPACEDIM> const& is_conserv);
 
 
-void bdsslope_3d (amrex::GpuArray<amrex::Real, AMREX_SPACEDIM > const& lo,
-                  amrex::GpuArray<amrex::Real, AMREX_SPACEDIM > const& hi,
-                  const amrex::MultiFab& s_mf,     const int ng_s,
-                  amrex::MultiFab& slope_mf, const int ng_c,
-                  amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx, 
-                  const amrex::BoxArray& ba, 
-                  const amrex::Geometry& geom, 
-                  const amrex::DistributionMapping& dmap);
+void bdsslope (const amrex::MultiFab& s_mf,   
+               amrex::MultiFab& slope_mf,
+               const amrex::Geometry& geom);
+               
 
 /*
 void bdsslope_2d (amrex::Array1D<const int > const& lo,

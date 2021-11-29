@@ -5,25 +5,29 @@
 #include "bds.H"
 
 
-const bool limit_slopes = true;
-
+const bool Limit_slopes = true;
+const Real Eps = 1.0e-10;
 
 
 using namespace amrex;  
 
 
 
-void bds( 
+void bds (const MultiFab& s_mf,
+          const Gemoetry& geom, 
+          MultiFab& sn_mf,
+          std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
+          Real dt,
+          int comp, //before this was automatic ?
+          int is_conserv){
+        
+    //const BoxArray& ba, const Geometry& geom, const DistributionMapping& dmap, int nlevs,
+    //const MultiFab& s_mf,
+    //MultiFab& sn_mf,
+    //const MultiFab& umac_mf, 
+    //GpuArray<Real, AMREX_SPACEDIM> const& dx, Real dt, 
+    //Array1D<const bool, 1, AMREX_SPACEDIM> const& is_conserv){
 
-    const BoxArray& ba, const Geometry& geom, const DistributionMapping& dmap, int nlevs,
-    const MultiFab& s_mf,
-    MultiFab& sn_mf,
-    const MultiFab& umac_mf, 
-    GpuArray<Real, AMREX_SPACEDIM> const& dx, Real dt, 
-    Array1D<const bool, 1, AMREX_SPACEDIM> const& is_conserv){
-
-    // this will hold slx, sly, and slxy
-    MultiFab slope_mf(ba ,dmap,7,1);   //HACK--Fix later wMacro 2D -- 3 components, 3D -- 7 components
 
     //Array4< const Real> sop = s.array();
     //Array4<       Real> snp = sn.array();
@@ -32,9 +36,15 @@ void bds(
     //Array4< const Real> vadvp = umac.array();
     //Array4< const Real> wadvp = umac.array();
 
-    int dm,ng_s,ng_c,ng_u,n,i,comp;
+    int dm,ng_s,ng_c,ng_u,n,i;
+
     GpuArray<Real, AMREX_SPACEDIM> lo = geom.ProbLoArray(); GpuArray<Real, AMREX_SPACEDIM> hi = geom.ProbHiArray(); //integer :: lo(mla%dim),hi(mla%dim)
 
+   
+    // this will hold slx, sly, and slxy
+    int nslope = (AMREX_SPACEDIM == 2) ? 3 : 7;
+    MultiFab slope_mf(ba,dmap,nslope,1);  
+    
     //nlevs = mla%nlevel
     //dm = mla%dim
 
@@ -93,10 +103,9 @@ void bds(
              wadvp  => dataptr(umac(n,3), i)
              // only advancing the tracer
              for(int comp=2; comp<=s(n)%nc; ++comp){  */
-                bdsslope_3d(lo, hi,
-                                 s_mf, ng_s,
-                                 slope_mf, ng_c,
-                                 dx, ba, geom, dmap);
+                bdsslope(      s_mf, 
+                                 slope_mf, 
+                                 dx, dmap);
                // 
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
@@ -175,98 +184,98 @@ void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
 
           if (limit_slopes) {
 
-          // ++ / sint(i+1,j+1)
-          sc(4) = s(i,j) + 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2))
-               + 0.25*hx*hy*slope(i,j,3);
+              // ++ / sint(i+1,j+1)
+              sc(4) = s(i,j) + 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2))
+                   + 0.25*hx*hy*slope(i,j,3);
 
-          // +- / sint(i+1,j  )
-          sc(3) = s(i,j) + 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2))
-               - 0.25*hx*hy*slope(i,j,3);
+              // +- / sint(i+1,j  )
+              sc(3) = s(i,j) + 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2))
+                   - 0.25*hx*hy*slope(i,j,3);
 
-          // -+ / sint(i  ,j+1)
-          sc(2) = s(i,j) - 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2))
-               - 0.25*hx*hy*slope(i,j,3);
+              // -+ / sint(i  ,j+1)
+              sc(2) = s(i,j) - 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2))
+                   - 0.25*hx*hy*slope(i,j,3);
 
-          // -- / sint(i  ,j  )
-          sc(1) = s(i,j) - 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2))
-               + 0.25*hx*hy*slope(i,j,3);
+              // -- / sint(i  ,j  )
+              sc(1) = s(i,j) - 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2))
+                   + 0.25*hx*hy*slope(i,j,3);
 
-          // enforce max/min bounds
-          smin(4) = min(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
-          smax(4) = max(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
+              // enforce max/min bounds
+              smin(4) = min(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
+              smax(4) = max(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
 
-          smin(3) = min(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
-          smax(3) = max(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
+              smin(3) = min(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
+              smax(3) = max(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
 
-          smin(2) = min(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
-          smax(2) = max(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
+              smin(2) = min(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
+              smax(2) = max(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
 
-          smin(1) = min(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
-          smax(1) = max(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
+              smin(1) = min(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
+              smax(1) = max(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
 
-          for(int mm=1; mm<=4; ++mm){
-             sc(mm) = max(min(sc(mm), smax(mm)), smin(mm));
-          }
+              for(int mm=1; mm<=4; ++mm){
+                 sc(mm) = max(min(sc(mm), smax(mm)), smin(mm));
+              }
 
-          // iterative loop
-          for(int ll=1; ll<=3; ++ll){
-             sumloc = 0.25*(sc(4) + sc(3) + sc(2) + sc(1));
-             sumdif = (sumloc - s(i,j))*4.0;
-             sgndif = sign(1.0,sumdif);
+              // iterative loop
+              for(int ll=1; ll<=3; ++ll){
+                 sumloc = 0.25*(sc(4) + sc(3) + sc(2) + sc(1));
+                 sumdif = (sumloc - s(i,j))*4.0;
+                 sgndif = sign(1.0,sumdif);
 
-             for(int mm=1; mm<=4; ++mm){
-                diff(mm) = (sc(mm) - s(i,j))*sgndif;
-             }
+                 for(int mm=1; mm<=4; ++mm){
+                    diff(mm) = (sc(mm) - s(i,j))*sgndif;
+                 }
 
-             kdp = 0;
+                 kdp = 0;
 
-             for(int mm=1; mm<=4; ++mm){
-                if (diff(mm) > eps) {
-                   kdp = kdp+1;
-                }
-             }
+                 for(int mm=1; mm<=4; ++mm){
+                    if (diff(mm) > eps) {
+                       kdp = kdp+1;
+                    }
+                 }
 
-             for(int mm=1; mm<=4; ++mm){
-                if (kdp<1) {
-                   div = 1.0;
-                } else {
-                   div = dble(kdp);
-                }
+                 for(int mm=1; mm<=4; ++mm){
+                    if (kdp<1) {
+                       div = 1.0;
+                    } else {
+                       div = dble(kdp);
+                    }
 
-                if (diff(mm)>eps) {
-                   redfac = sumdif*sgndif/div;
-                   kdp = kdp-1;
-                } else {
-                   redfac = 0.0;
-                }
+                    if (diff(mm)>eps) {
+                       redfac = sumdif*sgndif/div;
+                       kdp = kdp-1;
+                    } else {
+                       redfac = 0.0;
+                    }
 
-                if (sgndif > 0.0) {
-                   redmax = sc(mm) - smin(mm);
-                } else {
-                   redmax = smax(mm) - sc(mm);
-                }
+                    if (sgndif > 0.0) {
+                       redmax = sc(mm) - smin(mm);
+                    } else {
+                       redmax = smax(mm) - sc(mm);
+                    }
 
-                redfac = min(redfac,redmax);
-                sumdif = sumdif - redfac*sgndif;
-                sc(mm) = sc(mm) - redfac*sgndif;
-             }
-          }
+                    redfac = min(redfac,redmax);
+                    sumdif = sumdif - redfac*sgndif;
+                    sc(mm) = sc(mm) - redfac*sgndif;
+                 }
+              } // end iterative loop
 
-          // final slopes
+              // final slopes
 
-          // sx
-          slope(i,j,1) = 0.5*( sc(4) + sc(3)
-                                -sc(1) - sc(2))/hx;
+              // sx
+              slope(i,j,1) = 0.5*( sc(4) + sc(3)
+                                    -sc(1) - sc(2))/hx;
 
-          // sy
-          slope(i,j,2) = 0.5*( sc(4) + sc(2)
-                                -sc(1) - sc(3))/hy;
+              // sy
+              slope(i,j,2) = 0.5*( sc(4) + sc(2)
+                                    -sc(1) - sc(3))/hy;
 
-          // sxy
-          slope(i,j,3) = ( sc(1) + sc(4)
+              // sxy
+              slope(i,j,3) = ( sc(1) + sc(4)
                           -sc(2) - sc(3) ) / (hx*hy);
 
-          }
+          } // end if(limit_slopes)
 
        }
     }
@@ -274,333 +283,444 @@ void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
 }  //end subroutine bdsslope_2d
 #endif
 
-void bdsslope_3d ( 
+void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
 
         //use probin_module, only: limit_slopes //global constant
 
-        GpuArray<Real, AMREX_SPACEDIM> const& lo,    GpuArray<Real, AMREX_SPACEDIM> const& hi,
-        MultiFab const& s_mf,     const int ng_s,
-        MultiFab& slope_mf, const int ng_c,
-        GpuArray<Real, AMREX_SPACEDIM> const& dx, 
-        const BoxArray& ba, const Geometry& geom, 
-        const DistributionMapping& dmap){
+        //GpuArray<Real, AMREX_SPACEDIM> const& lo,    GpuArray<Real, AMREX_SPACEDIM> const& hi,
+        //MultiFab const& s_mf,     const int ng_s,
+        //MultiFab& slope_mf, const int ng_c,
+        //GpuArray<Real, AMREX_SPACEDIM> const& dx, 
+        //const BoxArray& ba, const Geometry& geom, 
+        //const DistributionMapping& dmap){
+
+    BoxArray ba = s_mf.boxArray();
+    DistributionMapping dmap = s_mf.DistributionMapping();
+    GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables
-    MultiFab sint_mf(ba, dmap, 1, 1); //HACK -- temp for compile
-    
+    MultiFab sint_mf(convert(ba,IntVect(AMREX_D_DECL(1,1,1))), dmap, 1, 1);
 
-    // HACK other local variables moved inside MFIter
-    Real c1,c2,c3,c4;
-    Real hx,hy,hz,eps;
+#if (AMREX_SPACEDIM ==2)                        
+    Real hx = dx[0];
+    Real hy = dx[1];
+#elif (AMREX_SPACEDIM ==3)                        
+    Real hz = dx[2];
 
-    // nodal with one ghost cell
-    //allocate(sint(lo(1)-1:hi(1)+2,lo(2)-1:hi(2)+2,lo(3)-1:hi(3)+2))
-
-    hx = dx[0];
-    hy = dx[1];
-    hz = dx[2];
-
-    eps = 1.0e-10;
-
-    c1 = (343.0/1728.0);
-    c2 = (49.0 /1728.0);
-    c3 = (7.0  /1728.0);
-    c4 = (1.0  /1728.0);
+    Real c1 = (343.0/1728.0);
+    Real c2 = (49.0 /1728.0);
+    Real c3 = (7.0  /1728.0);
+    Real c4 = (1.0  /1728.0);
+#endif
 
     //HACK -- remember to print out indices to ensure loops and box and hitting the right places.
     // as sanity check
-    for(int k = lo[2]-1; k<=hi[2]+2; ++k){ 
-    for(int j = lo[1]-1; j<=hi[1]+2; ++j){
-    for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k; }}} Print() << std::endl;
+    //for(int k = lo[2]-1; k<=hi[2]+2; ++k){ 
+    //for(int j = lo[1]-1; j<=hi[1]+2; ++j){
+    //for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k; }}} Print() << std::endl;
+
+
+    for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){ 
+
+        const Box& bx = mfi.growntilebox(1); 
+
+        Array4<const Real> const& s    = s_mf.array(mfi, comp);
+        Array4<      Real> const& sint = sint_mf.array(mfi);
+
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+        
+#if (AMREX_SPACEDIM ==2)                        
+            // bicubic interpolation to corner points
+            // (i,j,k) refers to lower corner of cell
+            sint(i,j) = (s(i-2,j-2) + s(i-2,j+1) + s(i+1,j-2) + s(i+1,j+1)
+                  - 7.0*(s(i-2,j-1) + s(i-2,j  ) + s(i-1,j-2) + s(i  ,j-2) +
+                         s(i-1,j+1) + s(i  ,j+1) + s(i+1,j-1) + s(i+1,j  ))
+                 + 49.0*(s(i-1,j-1) + s(i  ,j-1) + s(i-1,j  ) + s(i  ,j  )) ) / 144.0;
+#elif (AMREX_SPACEDIM ==3)                        
+            // tricubic interpolation to corner points
+            // (i,j,k) refers to lower corner of cell
+            sint(i,j,k) = c1*( s(i  ,j  ,k  ) + s(i-1,j  ,k  ) + s(i  ,j-1,k  )
+                              +s(i  ,j  ,k-1) + s(i-1,j-1,k  ) + s(i-1,j  ,k-1)
+                              +s(i  ,j-1,k-1) + s(i-1,j-1,k-1) )
+                         -c2*( s(i-1,j  ,k+1) + s(i  ,j  ,k+1) + s(i-1,j-1,k+1)
+                              +s(i  ,j-1,k+1) + s(i-1,j+1,k  ) + s(i  ,j+1,k  )
+                              +s(i-2,j  ,k  ) + s(i+1,j  ,k  ) + s(i-2,j-1,k  )
+                              +s(i+1,j-1,k  ) + s(i-1,j-2,k  ) + s(i  ,j-2,k  )
+                              +s(i-1,j+1,k-1) + s(i  ,j+1,k-1) + s(i-2,j  ,k-1)
+                              +s(i+1,j  ,k-1) + s(i-2,j-1,k-1) + s(i+1,j-1,k-1)
+                              +s(i-1,j-2,k-1) + s(i  ,j-2,k-1) + s(i-1,j  ,k-2)
+                              +s(i  ,j  ,k-2) + s(i-1,j-1,k-2) + s(i  ,j-1,k-2) )
+                         +c3*( s(i-1,j+1,k+1) + s(i  ,j+1,k+1) + s(i-2,j  ,k+1)
+                              +s(i+1,j  ,k+1) + s(i-2,j-1,k+1) + s(i+1,j-1,k+1)
+                              +s(i-1,j-2,k+1) + s(i  ,j-2,k+1) + s(i-2,j+1,k  )
+                              +s(i+1,j+1,k  ) + s(i-2,j-2,k  ) + s(i+1,j-2,k  )
+                              +s(i-2,j+1,k-1) + s(i+1,j+1,k-1) + s(i-2,j-2,k-1)
+                              +s(i+1,j-2,k-1) + s(i-1,j+1,k-2) + s(i  ,j+1,k-2)
+                              +s(i-2,j  ,k-2) + s(i+1,j  ,k-2) + s(i-2,j-1,k-2)
+                              +s(i+1,j-1,k-2) + s(i-1,j-2,k-2) + s(i  ,j-2,k-2) )
+                         -c4*( s(i-2,j+1,k+1) + s(i+1,j+1,k+1) + s(i-2,j-2,k+1)
+                              +s(i+1,j-2,k+1) + s(i-2,j+1,k-2) + s(i+1,j+1,k-2)
+                              +s(i-2,j-2,k-2) + s(i+1,j-2,k-2) );
+#endif
+        }); 
+
+    }
 
 
     for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
 
-        const Box& bx = mfi.validbox(); //HACK -- probably wrong box
+        const Box& bx = mfi.growntilebox(1); 
 
-        Array4<const Real> const& s = s_mf.array(mfi);
-        Array4<Real>  const& sint = sint_mf.array(mfi);
-        Array4<Real>  const& slope = slope_mf.array(mfi);
+        Array4<const Real> const& s     = s_mf.array(mfi, comp);
+        Array4<      Real> const& slope = slope_mf.array(mfi);
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
-            Print() << "i= " << i << "j= " << j << "k= " << k; 
-        // tricubic interpolation to corner points
-        // (i,j,k) refers to lower corner of cell
-             sint(i,j,k) = c1*( s(i  ,j  ,k  ) + s(i-1,j  ,k  ) + s(i  ,j-1,k  )
-                               +s(i  ,j  ,k-1) + s(i-1,j-1,k  ) + s(i-1,j  ,k-1)
-                               +s(i  ,j-1,k-1) + s(i-1,j-1,k-1) )
-                          -c2*( s(i-1,j  ,k+1) + s(i  ,j  ,k+1) + s(i-1,j-1,k+1)
-                               +s(i  ,j-1,k+1) + s(i-1,j+1,k  ) + s(i  ,j+1,k  )
-                               +s(i-2,j  ,k  ) + s(i+1,j  ,k  ) + s(i-2,j-1,k  )
-                               +s(i+1,j-1,k  ) + s(i-1,j-2,k  ) + s(i  ,j-2,k  )
-                               +s(i-1,j+1,k-1) + s(i  ,j+1,k-1) + s(i-2,j  ,k-1)
-                               +s(i+1,j  ,k-1) + s(i-2,j-1,k-1) + s(i+1,j-1,k-1)
-                               +s(i-1,j-2,k-1) + s(i  ,j-2,k-1) + s(i-1,j  ,k-2)
-                               +s(i  ,j  ,k-2) + s(i-1,j-1,k-2) + s(i  ,j-1,k-2) )
-                          +c3*( s(i-1,j+1,k+1) + s(i  ,j+1,k+1) + s(i-2,j  ,k+1)
-                               +s(i+1,j  ,k+1) + s(i-2,j-1,k+1) + s(i+1,j-1,k+1)
-                               +s(i-1,j-2,k+1) + s(i  ,j-2,k+1) + s(i-2,j+1,k  )
-                               +s(i+1,j+1,k  ) + s(i-2,j-2,k  ) + s(i+1,j-2,k  )
-                               +s(i-2,j+1,k-1) + s(i+1,j+1,k-1) + s(i-2,j-2,k-1)
-                               +s(i+1,j-2,k-1) + s(i-1,j+1,k-2) + s(i  ,j+1,k-2)
-                               +s(i-2,j  ,k-2) + s(i+1,j  ,k-2) + s(i-2,j-1,k-2)
-                               +s(i+1,j-1,k-2) + s(i-1,j-2,k-2) + s(i  ,j-2,k-2) )
-                          -c4*( s(i-2,j+1,k+1) + s(i+1,j+1,k+1) + s(i-2,j-2,k+1)
-                               +s(i+1,j-2,k+1) + s(i-2,j+1,k-2) + s(i+1,j+1,k-2)
-                               +s(i-2,j-2,k-2) + s(i+1,j-2,k-2) );
-        }); 
-           Print() << std::endl;
-    
-
-        for(int k = lo[2]-1; k<=hi[2]+1; ++k){ 
-        for(int j = lo[1]-1; j<=hi[1]+1; ++j){
-        for(int i = lo[0]-1; i<=hi[0]+1; ++i){ 
-            Print() << "i= " << i << "j= " << j << "k= " << k; }}}
-            Print() << std::endl; 
-        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
-
-            Print() << "i= " << i << "j= " << j << "k= " << k; 
             
+            // compute initial estimates of slopes from unlimited corner points
+
+            // local variables
+            Real sumloc, redfac, redmax, div, kdp, sumdif, sgndif;         
+
+#if (AMREX_SPACEDIM ==2)
+
+            Array1D<Real, 1, 4> diff;
+            Array1D<Real, 1, 4> smin;
+            Array1D<Real, 1, 4> smax;
+            Array1D<Real, 1, 4> sc; 
+
+            // sx
+            slope(i,j,1) = 0.5*(sint(i+1,j+1) + sint(i+1,j) - sint(i,j+1) - sint(i,j)) / hx;
+            // sy
+            slope(i,j,2) = 0.5*(sint(i+1,j+1) - sint(i+1,j) + sint(i,j+1) - sint(i,j)) / hy;
+            // sxy
+            slope(i,j,3) =     (sint(i+1,j+1) - sint(i+1,j) - sint(i,j+1) + sint(i,j)) / (hx*hy);
+
+            if (Limit_slopes) {
+
+                // ++ / sint(i+1,j+1)
+                sc(4) = s(i,j) + 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2)) + 0.25*hx*hy*slope(i,j,3);
+
+                // +- / sint(i+1,j  )
+                sc(3) = s(i,j) + 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2)) - 0.25*hx*hy*slope(i,j,3);
+
+                // -+ / sint(i  ,j+1)
+                sc(2) = s(i,j) - 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2)) - 0.25*hx*hy*slope(i,j,3);
+
+                // -- / sint(i  ,j  )
+                sc(1) = s(i,j) - 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2)) + 0.25*hx*hy*slope(i,j,3);
+
+                // enforce max/min bounds
+                smin(4) = std::min(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
+                smax(4) = std::max(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
+
+                smin(3) = std::min(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
+                smax(3) = std::max(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
+
+                smin(2) = std::min(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
+                smax(2) = std::max(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
+
+                smin(1) = std::min(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
+                smax(1) = std::max(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
+
+                for(int mm=1; mm<=4; ++mm){
+                   sc(mm) = std::max(std::min(sc(mm), smax(mm)), smin(mm));
+                }
+
+                // iterative loop
+                for(int ll=1; ll<=3; ++ll){
+                   sumloc = 0.25*(sc(4) + sc(3) + sc(2) + sc(1));
+                   sumdif = (sumloc - s(i,j))*4.0;
+                   sgndif = std::copysign(1.0,sumdif);
+
+                   for(int mm=1; mm<=4; ++mm){
+                      diff(mm) = (sc(mm) - s(i,j))*sgndif;
+                   }
+
+                   kdp = 0;
+
+                   for(int mm=1; mm<=4; ++mm){
+                      if (diff(mm) > Eps) {
+                         kdp = kdp+1;
+                      }
+                   }
+
+                   for(int mm=1; mm<=4; ++mm){
+                      if (kdp<1) {
+                         div = 1.0;
+                      } else {
+                         div = kdp;
+                      }
+
+                      if (diff(mm)>Eps) {
+                         redfac = sumdif*sgndif/div;
+                         kdp = kdp-1;
+                      } else {
+                         redfac = 0.0;
+                      }
+
+                      if (sgndif > 0.0) {
+                         redmax = sc(mm) - smin(mm);
+                      } else {
+                         redmax = smax(mm) - sc(mm);
+                      }
+
+                      redfac = min(redfac,redmax);
+                      sumdif = sumdif - redfac*sgndif;
+                      sc(mm) = sc(mm) - redfac*sgndif;
+                   }
+                } // end iterative loop
+
+                // final slopes
+
+                // sx
+                slope(i,j,1) = 0.5*( sc(4) + sc(3) -sc(1) - sc(2) )/hx;
+                // sy
+                slope(i,j,2) = 0.5*( sc(4) + sc(2) -sc(1) - sc(3) )/hy;
+                // sxy
+                slope(i,j,3) =     ( sc(1) + sc(4) -sc(2) - sc(3) )/(hx*hy);
+
+            } // if(limit_slopes)
+
+   
+#elif (AMREX_SPACEDIM ==3)
+
 
             // Variables local to this loop
             Array1D<Real, 1, 8> diff;
             Array1D<Real, 1, 8> smin;
             Array1D<Real, 1, 8> smax;
             Array1D<Real, 1, 8> sc; 
-            Real sumloc,redfac,redmax,div,kdp,sumdif,sgndif;
 
              // compute initial estimates of slopes from unlimited corner points
              // sx
-             slope(i,j,k,1) = 0.25*( ( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
-                                        +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1))
-                                      -( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
-                                        +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1)) ) / hx;
+             slope(i,j,k,1) = 0.25*(( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
+                                     +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1) )
+                                   -( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
+                                     +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1) )) / hx;
 
              // sy
              slope(i,j,k,2) = 0.25*(( sint(i  ,j+1,k  ) + sint(i+1,j+1,k  )
-                                     +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1))
+                                     +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k  ) + sint(i+1,j  ,k  )
-                                     +sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1)) ) / hy;
+                                     +sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1) )) / hy;
 
              // sz
              slope(i,j,k,3) = 0.25*(( sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1)
-                                     +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1))
+                                     +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k  ) + sint(i+1,j  ,k  )
-                                     +sint(i  ,j+1,k  ) + sint(i+1,j+1,k  )) ) / hz;
+                                     +sint(i  ,j+1,k  ) + sint(i+1,j+1,k  ) )) / hz;
 
              // sxy
              slope(i,j,k,4) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i  ,j  ,k+1)
-                                     +sint(i+1,j+1,k  ) + sint(i+1,j+1,k+1))
+                                     +sint(i+1,j+1,k  ) + sint(i+1,j+1,k+1) )
                                    -( sint(i+1,j  ,k  ) + sint(i+1,j  ,k+1)
-                                     +sint(i  ,j+1,k  ) + sint(i  ,j+1,k+1)) ) / (hx*hy);
+                                     +sint(i  ,j+1,k  ) + sint(i  ,j+1,k+1) )) / (hx*hy);
 
              // sxz
              slope(i,j,k,5) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
-                                     +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1))
+                                     +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
-                                     +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1)) ) / (hx*hz);
+                                     +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1) )) / (hx*hz);
 
              // syz
              slope(i,j,k,6) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i+1,j  ,k  )
-                                     +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1))
+                                     +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1)
-                                     +sint(i  ,j+1,k  ) + sint(i+1,j+1,k  )) ) / (hy*hz);
+                                     +sint(i  ,j+1,k  ) + sint(i+1,j+1,k  ) )) / (hy*hz);
 
              // sxyz
-             slope(i,j,k,7) = (-sint(i  ,j  ,k  ) + sint(i+1,j  ,k  ) + sint(i  ,j+1,k  )
-                               +sint(i  ,j  ,k+1) - sint(i+1,j+1,k  ) - sint(i+1,j  ,k+1)
-                               -sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) ) / (hx*hy*hz);
+             slope(i,j,k,7) =       (-sint(i  ,j  ,k  ) + sint(i+1,j  ,k  ) + sint(i  ,j+1,k  )
+                                     +sint(i  ,j  ,k+1) - sint(i+1,j+1,k  ) - sint(i+1,j  ,k+1)
+                                     -sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) ) / (hx*hy*hz);
 
              if (limit_slopes) {
 
-             // +++ / sint(i+1,j+1,k+1)
-             sc(8) = s(i,j,k)
-                  +0.5* (      hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
-                  +0.25*(   hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                  +0.125*hx*hy*hz*slope(i,j,k,7);
+                 // +++ / sint(i+1,j+1,k+1)
+                 sc(8) = s(i,j,k)
+                      +0.5  *(     hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
+                      +0.25 *(  hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
+                      +0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // ++- / sint(i+1,j+1,k  )
-             sc(7) = s(i,j,k)
-                  +0.5*( hx*slope(i,j,k,1)+hy*slope(i,j,k,2)-hz*slope(i,j,k,3))
-                  +0.25*( hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                  -0.125*hx*hy*hz*slope(i,j,k,7);
+                 // ++- / sint(i+1,j+1,k  )
+                 sc(7) = s(i,j,k)
+                      +0.5  *(     hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
+                      +0.25 *(  hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
+                      -0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // +-+ / sint(i+1,j  ,k+1)
-             sc(6) = s(i,j,k)
-                  +0.5*( hx*slope(i,j,k,1)-hy*slope(i,j,k,2)+hz*slope(i,j,k,3))
-                  +0.25*(-hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                  -0.125*hx*hy*hz*slope(i,j,k,7);
+                 // +-+ / sint(i+1,j  ,k+1)
+                 sc(6) = s(i,j,k)
+                      +0.5  *(     hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
+                      +0.25 *( -hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
+                      -0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // +-- / sint(i+1,j  ,k  )
-             sc(5) = s(i,j,k)
-                  +0.5*( hx*slope(i,j,k,1)-hy*slope(i,j,k,2)-hz*slope(i,j,k,3))
-                  +0.25*(-hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                  +0.125*hx*hy*hz*slope(i,j,k,7);
+                 // +-- / sint(i+1,j  ,k  )
+                 sc(5) = s(i,j,k)
+                      +0.5  *(     hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
+                      +0.25 *( -hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
+                      +0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // -++ / sint(i  ,j+1,k+1)
-             sc(4) = s(i,j,k)
-                  +0.5*(-hx*slope(i,j,k,1)+hy*slope(i,j,k,2)+hz*slope(i,j,k,3))
-                  +0.25*(-hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                  -0.125*hx*hy*hz*slope(i,j,k,7);
+                 // -++ / sint(i  ,j+1,k+1)
+                 sc(4) = s(i,j,k)
+                      +0.5  *(    -hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
+                      +0.25 *( -hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
+                      -0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // -+- / sint(i  ,j+1,k  )
-             sc(3) = s(i,j,k)
-                  +0.5*(-hx*slope(i,j,k,1)+hy*slope(i,j,k,2)-hz*slope(i,j,k,3))
-                  +0.25*(-hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                  +0.125*hx*hy*hz*slope(i,j,k,7);
+                 // -+- / sint(i  ,j+1,k  )
+                 sc(3) = s(i,j,k)
+                      +0.5  *(    -hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
+                      +0.25 *( -hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
+                      +0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // --+ / sint(i  ,j  ,k+1)
-             sc(2) = s(i,j,k)
-                  +0.5*(-hx*slope(i,j,k,1)-hy*slope(i,j,k,2)+hz*slope(i,j,k,3))
-                  +0.25*( hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                  +0.125*hx*hy*hz*slope(i,j,k,7);
+                 // --+ / sint(i  ,j  ,k+1)
+                 sc(2) = s(i,j,k)
+                      +0.5  *(    -hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
+                      +0.25 *(  hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
+                      +0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // ---/ sint(i  ,j  ,k  )
-             sc(1) = s(i,j,k)
-                  +0.5*(-hx*slope(i,j,k,1)-hy*slope(i,j,k,2)-hz*slope(i,j,k,3))
-                  +0.25*( hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                  -0.125*hx*hy*hz*slope(i,j,k,7);
+                 // ---/ sint(i  ,j  ,k  )
+                 sc(1) = s(i,j,k)
+                      +0.5  *(    -hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
+                      +0.25 *(  hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
+                      -0.125*hx*hy*hz*slope(i,j,k,7);
 
-             // enforce max/min bounds
-             smin(8) = min(s(i,j,k),s(i+1,j,k),s(i,j+1,k),s(i,j,k+1),
-                           s(i+1,j+1,k),s(i+1,j,k+1),s(i,j+1,k+1),s(i+1,j+1,k+1));
-             smax(8) = max(s(i,j,k),s(i+1,j,k),s(i,j+1,k),s(i,j,k+1),
-                           s(i+1,j+1,k),s(i+1,j,k+1),s(i,j+1,k+1),s(i+1,j+1,k+1));
+                 // enforce max/min bounds
+                 smin(8) = std::min(s(i  ,j  ,k  ),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i  ,j  ,k+1),
+                                    s(i+1,j+1,k  ),s(i+1,j  ,k+1),s(i  ,j+1,k+1),s(i+1,j+1,k+1));
+                 smax(8) = std::max(s(i  ,j  ,k  ),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i  ,j  ,k+1),
+                                    s(i+1,j+1,k  ),s(i+1,j  ,k+1),s(i  ,j+1,k+1),s(i+1,j+1,k+1));
 
-             smin(7) = min(s(i,j,k-1),s(i+1,j,k-1),s(i,j+1,k-1),s(i,j,k),
-                           s(i+1,j+1,k-1),s(i+1,j,k),s(i,j+1,k),s(i+1,j+1,k));
-             smax(7) = max(s(i,j,k-1),s(i+1,j,k-1),s(i,j+1,k-1),s(i,j,k),
-                           s(i+1,j+1,k-1),s(i+1,j,k),s(i,j+1,k),s(i+1,j+1,k));
+                 smin(7) = std::min(s(i  ,j  ,k-1),s(i+1,j  ,k-1),s(i  ,j+1,k-1),s(i  ,j  ,k  ),
+                                    s(i+1,j+1,k-1),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i+1,j+1,k  ));
+                 smax(7) = std::max(s(i  ,j  ,k-1),s(i+1,j  ,k-1),s(i  ,j+1,k-1),s(i  ,j  ,k  ),
+                                    s(i+1,j+1,k-1),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i+1,j+1,k  ));
 
-             smin(6) = min(s(i,j-1,k),s(i+1,j-1,k),s(i,j,k),s(i,j-1,k+1),
-                           s(i+1,j,k),s(i+1,j-1,k+1),s(i,j,k+1),s(i+1,j,k+1));
-             smax(6) = max(s(i,j-1,k),s(i+1,j-1,k),s(i,j,k),s(i,j-1,k+1),
-                           s(i+1,j,k),s(i+1,j-1,k+1),s(i,j,k+1),s(i+1,j,k+1));
+                 smin(6) = std::min(s(i  ,j-1,k  ),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i  ,j-1,k+1),
+                                    s(i+1,j  ,k  ),s(i+1,j-1,k+1),s(i  ,j  ,k+1),s(i+1,j  ,k+1));
+                 smax(6) = std::max(s(i  ,j-1,k  ),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i  ,j-1,k+1),
+                                    s(i+1,j  ,k  ),s(i+1,j-1,k+1),s(i  ,j  ,k+1),s(i+1,j  ,k+1));
 
-             smin(5) = min(s(i,j-1,k-1),s(i+1,j-1,k-1),s(i,j,k-1),s(i,j-1,k),
-                           s(i+1,j,k-1),s(i+1,j-1,k),s(i,j,k),s(i+1,j,k));
-             smax(5) = max(s(i,j-1,k-1),s(i+1,j-1,k-1),s(i,j,k-1),s(i,j-1,k),
-                           s(i+1,j,k-1),s(i+1,j-1,k),s(i,j,k),s(i+1,j,k));
+                 smin(5) = std::min(s(i  ,j-1,k-1),s(i+1,j-1,k-1),s(i  ,j  ,k-1),s(i  ,j-1,k  ),
+                                    s(i+1,j  ,k-1),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i+1,j  ,k  ));
+                 smax(5) = std::max(s(i  ,j-1,k-1),s(i+1,j-1,k-1),s(i  ,j  ,k-1),s(i  ,j-1,k  ),
+                                    s(i+1,j  ,k-1),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i+1,j  ,k  ));
 
-             smin(4) = min(s(i-1,j,k),s(i,j,k),s(i-1,j+1,k),s(i-1,j,k+1),
-                           s(i,j+1,k),s(i,j,k+1),s(i-1,j+1,k+1),s(i,j+1,k+1));
-             smax(4) = max(s(i-1,j,k),s(i,j,k),s(i-1,j+1,k),s(i-1,j,k+1),
-                           s(i,j+1,k),s(i,j,k+1),s(i-1,j+1,k+1),s(i,j+1,k+1));
+                 smin(4) = std::min(s(i-1,j  ,k  ),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i-1,j  ,k+1),
+                                    s(i  ,j+1,k  ),s(i  ,j  ,k+1),s(i-1,j+1,k+1),s(i  ,j+1,k+1));
+                 smax(4) = std::max(s(i-1,j  ,k  ),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i-1,j  ,k+1),
+                                    s(i  ,j+1,k  ),s(i  ,j  ,k+1),s(i-1,j+1,k+1),s(i  ,j+1,k+1));
 
-             smin(3) = min(s(i-1,j,k-1),s(i,j,k-1),s(i-1,j+1,k-1),s(i-1,j,k),
-                           s(i,j+1,k-1),s(i,j,k),s(i-1,j+1,k),s(i,j+1,k));
-             smax(3) = max(s(i-1,j,k-1),s(i,j,k-1),s(i-1,j+1,k-1),s(i-1,j,k),
-                           s(i,j+1,k-1),s(i,j,k),s(i-1,j+1,k),s(i,j+1,k));
+                 smin(3) = std::min(s(i-1,j  ,k-1),s(i  ,j  ,k-1),s(i-1,j+1,k-1),s(i-1,j  ,k  ),
+                                    s(i  ,j+1,k-1),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i  ,j+1,k  ));
+                 smax(3) = std::max(s(i-1,j  ,k-1),s(i  ,j  ,k-1),s(i-1,j+1,k-1),s(i-1,j  ,k  ),
+                                    s(i  ,j+1,k-1),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i  ,j+1,k  ));
 
-             smin(2) = min(s(i-1,j-1,k),s(i,j-1,k),s(i-1,j,k),s(i-1,j-1,k+1),
-                           s(i,j,k),s(i,j-1,k+1),s(i-1,j,k+1),s(i,j,k+1));
-             smax(2) = max(s(i-1,j-1,k),s(i,j-1,k),s(i-1,j,k),s(i-1,j-1,k+1),
-                           s(i,j,k),s(i,j-1,k+1),s(i-1,j,k+1),s(i,j,k+1));
+                 smin(2) = std::min(s(i-1,j-1,k  ),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i-1,j-1,k+1),
+                                    s(i  ,j  ,k  ),s(i  ,j-1,k+1),s(i-1,j  ,k+1),s(i  ,j  ,k+1));
+                 smax(2) = std::max(s(i-1,j-1,k  ),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i-1,j-1,k+1),
+                                    s(i  ,j  ,k  ),s(i  ,j-1,k+1),s(i-1,j  ,k+1),s(i  ,j  ,k+1));
 
-             smin(1) = min(s(i-1,j-1,k-1),s(i,j-1,k-1),s(i-1,j,k-1),s(i-1,j-1,k),
-                           s(i,j,k-1),s(i,j-1,k),s(i-1,j,k),s(i,j,k));
-             smax(1) = max(s(i-1,j-1,k-1),s(i,j-1,k-1),s(i-1,j,k-1),s(i-1,j-1,k),
-                           s(i,j,k-1),s(i,j-1,k),s(i-1,j,k),s(i,j,k));
+                 smin(1) = std::min(s(i-1,j-1,k-1),s(i  ,j-1,k-1),s(i-1,j  ,k-1),s(i-1,j-1,k  ),
+                                    s(i  ,j  ,k-1),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i  ,j  ,k  ));
+                 smax(1) = std::max(s(i-1,j-1,k-1),s(i  ,j-1,k-1),s(i-1,j  ,k-1),s(i-1,j-1,k  ),
+                                    s(i  ,j  ,k-1),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i  ,j  ,k  ));
 
-             for(int mm=1; mm<=8; ++mm){
-                sc(mm) = max(min(sc(mm), smax(mm)), smin(mm));
-             }
+                 for(int mm=1; mm<=8; ++mm){
+                    sc(mm) = std::max(std::min(sc(mm), smax(mm)), smin(mm));
+                 }
 
-             // iterative loop
-             for(int ll = 1; ll<=3; ++ll){
-                sumloc = 0.125*(sc(1)+sc(2)+sc(3)+sc(4)+sc(5)+sc(6)+sc(7)+sc(8));
-                sumdif = (sumloc - s(i,j,k))*8.0;
-                sgndif = std::copysign(1.0,sumdif); //HACK replaced f90 sign
+                 // iterative loop
+                 for(int ll = 1; ll<=3; ++ll){
+                    sumloc = 0.125*(sc(1)+sc(2)+sc(3)+sc(4)+sc(5)+sc(6)+sc(7)+sc(8));
+                    sumdif = (sumloc - s(i,j,k))*8.0;
+                    sgndif = std::copysign(1.0,sumdif); 
 
-                for(int mm=1; mm<=8; ++mm){
-                   diff(mm) = (sc(mm) - s(i,j,k))*sgndif;
-                }
+                    for(int mm=1; mm<=8; ++mm){
+                       diff(mm) = (sc(mm) - s(i,j,k))*sgndif;
+                    }
 
-                kdp = 0;
+                    kdp = 0;
 
-                for(int mm=1; mm<=8; ++mm){
-                   if (diff(mm) > eps) {
-                      kdp = kdp+1;
-                   }
-                }
+                    for(int mm=1; mm<=8; ++mm){
+                       if (diff(mm) > eps) {
+                          kdp = kdp+1;
+                       }
+                    }
 
-                for(int mm=1; mm<=8; ++mm){
-                   if (kdp<1) {
-                      div = 1.0;
-                   } else {
-                      div = kdp;         //HACK don't think dble is needed anymore
-                   }
+                    for(int mm=1; mm<=8; ++mm){
+                       if (kdp<1) {
+                          div = 1.0;
+                       } else {
+                          div = kdp;      
+                       }
 
-                   if (diff(mm)>eps) {
-                      redfac = sumdif*sgndif/div;
-                      kdp = kdp-1;
-                   } else {
-                      redfac = 0.0;
-                   }
+                       if (diff(mm)>eps) {
+                          redfac = sumdif*sgndif/div;
+                          kdp = kdp-1;
+                       } else {
+                          redfac = 0.0;
+                       }
 
-                   if (sgndif > 0.0) {
-                      redmax = sc(mm) - smin(mm);
-                   } else {
-                      redmax = smax(mm) - sc(mm);
-                   }
+                       if (sgndif > 0.0) {
+                          redmax = sc(mm) - smin(mm);
+                       } else {
+                          redmax = smax(mm) - sc(mm);
+                       }
 
-                   redfac = min(redfac,redmax);
-                   sumdif = sumdif - redfac*sgndif;
-                   sc(mm) = sc(mm) - redfac*sgndif;
-                }
-             }
+                       redfac = min(redfac,redmax);
+                       sumdif = sumdif - redfac*sgndif;
+                       sc(mm) = sc(mm) - redfac*sgndif;
+                    }
+                 }
 
-             // final slopes
+                 // final slopes
 
-             // sx
-             slope(i,j,k,1) = 0.25*( ( sc(5) + sc(7)
-                                        +sc(6) + sc(8))
-                                      -( sc(1) + sc(3)
-                                        +sc(2) + sc(4)) ) / hx;
+                 // sx
+                 slope(i,j,k,1) = 0.25*( ( sc(5) + sc(7)
+                                          +sc(6) + sc(8))
+                                        -( sc(1) + sc(3)
+                                          +sc(2) + sc(4)) ) / hx;
 
-             // sy
-             slope(i,j,k,2) = 0.25*( ( sc(3) + sc(7)
-                                        +sc(4) + sc(8))
-                                      -( sc(1) + sc(5)
-                                        +sc(2) + sc(6)) ) / hy;
+                 // sy
+                 slope(i,j,k,2) = 0.25*( ( sc(3) + sc(7)
+                                          +sc(4) + sc(8))
+                                        -( sc(1) + sc(5)
+                                          +sc(2) + sc(6)) ) / hy;
 
-             // sz
-             slope(i,j,k,3) = 0.25*( ( sc(2) + sc(6)
-                                        +sc(4) + sc(8))
-                                      -( sc(1) + sc(5)
-                                        +sc(3) + sc(7)) ) / hz;
+                 // sz
+                 slope(i,j,k,3) = 0.25*( ( sc(2) + sc(6)
+                                          +sc(4) + sc(8))
+                                        -( sc(1) + sc(5)
+                                          +sc(3) + sc(7)) ) / hz;
 
-             // sxy
-             slope(i,j,k,4) = 0.5*( ( sc(1) + sc(2)
-                                       +sc(7) + sc(8))
-                                     -( sc(5) + sc(6)
-                                       +sc(3) + sc(4)) ) / (hx*hy);
+                 // sxy
+                 slope(i,j,k,4) = 0.5*( ( sc(1) + sc(2)
+                                         +sc(7) + sc(8))
+                                       -( sc(5) + sc(6)
+                                         +sc(3) + sc(4)) ) / (hx*hy);
 
-             // sxz
-             slope(i,j,k,5) = 0.5*( ( sc(1) + sc(3)
-                                       +sc(6) + sc(8))
-                                     -( sc(5) + sc(7)
-                                       +sc(2) + sc(4)) ) / (hx*hz);
+                 // sxz
+                 slope(i,j,k,5) = 0.5*( ( sc(1) + sc(3)
+                                         +sc(6) + sc(8))
+                                       -( sc(5) + sc(7)
+                                         +sc(2) + sc(4)) ) / (hx*hz);
 
-             // syz
-             slope(i,j,k,6) = 0.5*( ( sc(1) + sc(5)
-                                       +sc(4) + sc(8))
-                                     -( sc(2) + sc(6)
-                                       +sc(3) + sc(7)) ) / (hy*hz);
+                 // syz
+                 slope(i,j,k,6) = 0.5*( ( sc(1) + sc(5)
+                                         +sc(4) + sc(8))
+                                       -( sc(2) + sc(6)
+                                         +sc(3) + sc(7)) ) / (hy*hz);
 
-             // sxyz
-             slope(i,j,k,7) = (-sc(1) + sc(5) + sc(3)
-                               +sc(2) - sc(7) - sc(6)
-                               -sc(4) + sc(8) ) / (hx*hy*hz);
+                 // sxyz
+                 slope(i,j,k,7) = (-sc(1) + sc(5) + sc(3)
+                                   +sc(2) - sc(7) - sc(6)
+                                   -sc(4) + sc(8) ) / (hx*hy*hz);
 
-             }
+             } //if(limit_slopes)
+#endif
 
           }); //ParallelFor
-            Print() << std::endl; 
        } //MFIter
-
-
-} // end subroutine bdsslope_3d
+} //subroutine bdsslope
 
 #if (0)
 void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
