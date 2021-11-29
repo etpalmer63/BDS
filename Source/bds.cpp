@@ -268,7 +268,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
         //const DistributionMapping& dmap){
 
     BoxArray ba = s_mf.boxArray();
-    const DistributionMapping dmap = s_mf.DistributionMap();
+    DistributionMapping dmap = s_mf.DistributionMap();
     GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables

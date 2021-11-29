@@ -192,7 +192,7 @@ void main_main ()
         WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
     }
 
-    int comp = 1; //HACK figure out what to do with this later
+    int comp = 0; //HACK figure out what to do with this later
 
 
     for (int step = 1; step <= nsteps; ++step)
