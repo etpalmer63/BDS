@@ -9,15 +9,16 @@
 
 void bds (const amrex::MultiFab& s_mf,
           const amrex::Geometry& geom,      
-          amrex::MultiFab& sn_mf,
+                amrex::MultiFab& sn_mf,
           std::array<amrex::MultiFab, AMREX_SPACEDIM>& umac_mf,
-          amrex::Real dt;
-          int comp;
+          amrex::Real dt,
+          int comp,
           int is_conserv);
 
 void bdsslope (const amrex::MultiFab& s_mf,   
-               amrex::MultiFab& slope_mf,
-               const amrex::Geometry& geom);
+               const amrex::Geometry& geom,
+                     amrex::MultiFab& slope_mf,
+               int comp);
 
 /*
 void bdsslope_2d (amrex::Array1D<const int > const& lo,

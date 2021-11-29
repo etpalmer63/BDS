@@ -121,14 +121,18 @@ void main_main ()
     DistributionMapping dm(ba);
 
     //
-    Array1D<const bool, 1, AMREX_SPACEDIM> is_conserv = {true, true, true};
+    int is_conserv;
+    //Array1D<const bool, 1, AMREX_SPACEDIM> is_conserv = {true, true, true};
     // we allocate two phi multifabs; one will store the old state, the other the new.
 
     //initialize data on the multifab
     MultiFab s_old_mf(ba, dm, Ncomp, Nghost); 
     MultiFab s_new_mf(ba, dm, Ncomp, Nghost);
 
-    MultiFab umac_mf(ba, dm, 3, Nghost);
+    //std::array<MultiFab, AMREX_SPACEDIM> umac_mf(ba, dm, 3, Nghost);
+    Array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
+                                                         MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost), 
+                                                         MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
     //MultiFab uVel(ba, dm, Ncomp, Nghost);
     //MultiFab vVel(ba, dm, Ncomp, Nghost);
     //MultiFab wVel(ba, dm, Ncomp, Nghost);
@@ -148,8 +152,10 @@ void main_main ()
     {
         const Box& bx = mfi.validbox();
 
-        Array4<Real> const& umac = umac_mf.array(mfi);
-        Array4<Real> const& S_old = s_old_mf.array(mfi);
+        Array4<const Real> const& umac = umac_mf[0].array(mfi);  //HACK -- later may need to adjusted.
+        Array4<const Real> const& vmac = umac_mf[1].array(mfi);
+        Array4<const Real> const& wmac = umac_mf[2].array(mfi);
+        Array4<      Real> const& S_old = s_old_mf.array(mfi);
         //Array4<Real> const& v_vel = vmac.array(mfi);
         //Array4<Real> const& w_vel = wVel.array(mfi);
         //Array4<Real> const& S_old = s_old_mf.array(mfi);
@@ -160,16 +166,17 @@ void main_main ()
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
 
-            umac(i,j,k,1) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
-            umac(i,j,k,2) = 0.25;
-            umac(i,j,k,3) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))); 
+            //HACK -- this will probably need to be reworded to create points on the faces
+            umac(i,j,k,0) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
+            vmac(i,j,k,0) = 0.25;
+            wmac(i,j,k,0) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))); 
 
             Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
             if ( r <= 0.1 ) {
-              S_old(i,j,k) = 1;
+              S_old(i,j,k) = 1.0;
             } else {
-              S_old(i,j,k) = 0;
+              S_old(i,j,k) = 0.0;
             }
 
         });
@@ -185,13 +192,15 @@ void main_main ()
         WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
     }
 
+    int comp = 1; //HACK figure out what to do with this later
+
 
     for (int step = 1; step <= nsteps; ++step)
     {
         // fill periodic ghost cells
         s_old_mf.FillBoundary(geom.periodicity());
 
-        bds(ba, geom, dm, 1, s_old_mf, s_new_mf, umac_mf, dx, dt, is_conserv);
+        bds(s_old_mf, geom, s_new_mf, umac_mf, dt, comp, is_conserv);
         // new_phi = old_phi + dt * Laplacian(old_phi)
         // loop over boxes
     /*

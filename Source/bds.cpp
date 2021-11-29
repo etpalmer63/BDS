@@ -5,8 +5,8 @@
 #include "bds.H"
 
 
-const bool Limit_slopes = true;
-const Real Eps = 1.0e-10;
+const bool limit_slopes = true;
+constexpr amrex::Real eps = 1.0e-10;
 
 
 using namespace amrex;  
@@ -14,9 +14,9 @@ using namespace amrex;
 
 
 void bds (const MultiFab& s_mf,
-          const Gemoetry& geom, 
+          const Geometry& geom, 
           MultiFab& sn_mf,
-          std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
+          Array<MultiFab, AMREX_SPACEDIM>& umac_mf,
           Real dt,
           int comp, //before this was automatic ?
           int is_conserv){
@@ -39,7 +39,7 @@ void bds (const MultiFab& s_mf,
     //int dm,ng_s,ng_c,ng_u,n,i;
 
     BoxArray ba = s_mf.boxArray();
-    DistributionMapping dmap = s_mf.DistributionMapping();
+    DistributionMapping dmap = s_mf.DistributionMap();
     GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // this will hold slx, sly, and slxy
@@ -77,7 +77,7 @@ void bds (const MultiFab& s_mf,
              wadvp  => dataptr(umac(n,3), i)
              // only advancing the tracer
              for(int comp=2; comp<=s(n)%nc; ++comp){  */
-                bdsslope(s_mf, slope_mf, dx, dmap);
+                bdsslope(s_mf, geom, slope_mf, comp);
                 
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
@@ -256,7 +256,7 @@ void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
 }  //end subroutine bdsslope_2d
 #endif
 
-void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
+void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, int comp){
 
         //use probin_module, only: limit_slopes //global constant
 
@@ -268,7 +268,7 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
         //const DistributionMapping& dmap){
 
     BoxArray ba = s_mf.boxArray();
-    DistributionMapping dmap = s_mf.DistributionMapping();
+    DistributionMapping dmap = s_mf.DistributionMap();
     GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables
@@ -278,6 +278,8 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
     Real hx = dx[0];
     Real hy = dx[1];
 #elif (AMREX_SPACEDIM ==3)                        
+    Real hx = dx[0];
+    Real hy = dx[1];
     Real hz = dx[2];
 
     Real c1 = (343.0/1728.0);
@@ -345,6 +347,7 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
         const Box& bx = mfi.growntilebox(1); 
 
         Array4<const Real> const& s     = s_mf.array(mfi, comp);
+        Array4<const Real> const& sint  = sint_mf.array(mfi);
         Array4<      Real> const& slope = slope_mf.array(mfi);
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
@@ -368,7 +371,7 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
             // sxy
             slope(i,j,3) =     (sint(i+1,j+1) - sint(i+1,j) - sint(i,j+1) + sint(i,j)) / (hx*hy);
 
-            if (Limit_slopes) {
+            if (limit_slopes) {
 
                 // ++ / sint(i+1,j+1)
                 sc(4) = s(i,j) + 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2)) + 0.25*hx*hy*slope(i,j,3);
@@ -383,20 +386,20 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
                 sc(1) = s(i,j) - 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2)) + 0.25*hx*hy*slope(i,j,3);
 
                 // enforce max/min bounds
-                smin(4) = std::min(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
-                smax(4) = std::max(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
+                smin(4) = min(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
+                smax(4) = max(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
 
-                smin(3) = std::min(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
-                smax(3) = std::max(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
+                smin(3) = min(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
+                smax(3) = max(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
 
-                smin(2) = std::min(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
-                smax(2) = std::max(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
+                smin(2) = min(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
+                smax(2) = max(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
 
-                smin(1) = std::min(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
-                smax(1) = std::max(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
+                smin(1) = min(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
+                smax(1) = max(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
 
                 for(int mm=1; mm<=4; ++mm){
-                   sc(mm) = std::max(std::min(sc(mm), smax(mm)), smin(mm));
+                   sc(mm) = max(min(sc(mm), smax(mm)), smin(mm));
                 }
 
                 // iterative loop
@@ -412,7 +415,7 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
                    kdp = 0;
 
                    for(int mm=1; mm<=4; ++mm){
-                      if (diff(mm) > Eps) {
+                      if (diff(mm) > eps) {
                          kdp = kdp+1;
                       }
                    }
@@ -424,7 +427,7 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
                          div = kdp;
                       }
 
-                      if (diff(mm)>Eps) {
+                      if (diff(mm)>eps) {
                          redfac = sumdif*sgndif/div;
                          kdp = kdp-1;
                       } else {
@@ -557,48 +560,48 @@ void bdsslope ( MultiFab const& s_mf, MultiFab& slope_mf, const Geometry& geom){
                       -0.125*hx*hy*hz*slope(i,j,k,7);
 
                  // enforce max/min bounds
-                 smin(8) = std::min(s(i  ,j  ,k  ),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i  ,j  ,k+1),
-                                    s(i+1,j+1,k  ),s(i+1,j  ,k+1),s(i  ,j+1,k+1),s(i+1,j+1,k+1));
-                 smax(8) = std::max(s(i  ,j  ,k  ),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i  ,j  ,k+1),
-                                    s(i+1,j+1,k  ),s(i+1,j  ,k+1),s(i  ,j+1,k+1),s(i+1,j+1,k+1));
+                 smin(8) = min(s(i  ,j  ,k  ),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i  ,j  ,k+1),
+                               s(i+1,j+1,k  ),s(i+1,j  ,k+1),s(i  ,j+1,k+1),s(i+1,j+1,k+1));
+                 smax(8) = max(s(i  ,j  ,k  ),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i  ,j  ,k+1),
+                               s(i+1,j+1,k  ),s(i+1,j  ,k+1),s(i  ,j+1,k+1),s(i+1,j+1,k+1));
 
-                 smin(7) = std::min(s(i  ,j  ,k-1),s(i+1,j  ,k-1),s(i  ,j+1,k-1),s(i  ,j  ,k  ),
-                                    s(i+1,j+1,k-1),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i+1,j+1,k  ));
-                 smax(7) = std::max(s(i  ,j  ,k-1),s(i+1,j  ,k-1),s(i  ,j+1,k-1),s(i  ,j  ,k  ),
-                                    s(i+1,j+1,k-1),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i+1,j+1,k  ));
+                 smin(7) = min(s(i  ,j  ,k-1),s(i+1,j  ,k-1),s(i  ,j+1,k-1),s(i  ,j  ,k  ),
+                               s(i+1,j+1,k-1),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i+1,j+1,k  ));
+                 smax(7) = max(s(i  ,j  ,k-1),s(i+1,j  ,k-1),s(i  ,j+1,k-1),s(i  ,j  ,k  ),
+                               s(i+1,j+1,k-1),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i+1,j+1,k  ));
 
-                 smin(6) = std::min(s(i  ,j-1,k  ),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i  ,j-1,k+1),
-                                    s(i+1,j  ,k  ),s(i+1,j-1,k+1),s(i  ,j  ,k+1),s(i+1,j  ,k+1));
-                 smax(6) = std::max(s(i  ,j-1,k  ),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i  ,j-1,k+1),
-                                    s(i+1,j  ,k  ),s(i+1,j-1,k+1),s(i  ,j  ,k+1),s(i+1,j  ,k+1));
+                 smin(6) = min(s(i  ,j-1,k  ),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i  ,j-1,k+1),
+                               s(i+1,j  ,k  ),s(i+1,j-1,k+1),s(i  ,j  ,k+1),s(i+1,j  ,k+1));
+                 smax(6) = max(s(i  ,j-1,k  ),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i  ,j-1,k+1),
+                               s(i+1,j  ,k  ),s(i+1,j-1,k+1),s(i  ,j  ,k+1),s(i+1,j  ,k+1));
 
-                 smin(5) = std::min(s(i  ,j-1,k-1),s(i+1,j-1,k-1),s(i  ,j  ,k-1),s(i  ,j-1,k  ),
-                                    s(i+1,j  ,k-1),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i+1,j  ,k  ));
-                 smax(5) = std::max(s(i  ,j-1,k-1),s(i+1,j-1,k-1),s(i  ,j  ,k-1),s(i  ,j-1,k  ),
-                                    s(i+1,j  ,k-1),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i+1,j  ,k  ));
+                 smin(5) = min(s(i  ,j-1,k-1),s(i+1,j-1,k-1),s(i  ,j  ,k-1),s(i  ,j-1,k  ),
+                               s(i+1,j  ,k-1),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i+1,j  ,k  ));
+                 smax(5) = max(s(i  ,j-1,k-1),s(i+1,j-1,k-1),s(i  ,j  ,k-1),s(i  ,j-1,k  ),
+                               s(i+1,j  ,k-1),s(i+1,j-1,k  ),s(i  ,j  ,k  ),s(i+1,j  ,k  ));
 
-                 smin(4) = std::min(s(i-1,j  ,k  ),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i-1,j  ,k+1),
-                                    s(i  ,j+1,k  ),s(i  ,j  ,k+1),s(i-1,j+1,k+1),s(i  ,j+1,k+1));
-                 smax(4) = std::max(s(i-1,j  ,k  ),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i-1,j  ,k+1),
-                                    s(i  ,j+1,k  ),s(i  ,j  ,k+1),s(i-1,j+1,k+1),s(i  ,j+1,k+1));
+                 smin(4) = min(s(i-1,j  ,k  ),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i-1,j  ,k+1),
+                               s(i  ,j+1,k  ),s(i  ,j  ,k+1),s(i-1,j+1,k+1),s(i  ,j+1,k+1));
+                 smax(4) = max(s(i-1,j  ,k  ),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i-1,j  ,k+1),
+                               s(i  ,j+1,k  ),s(i  ,j  ,k+1),s(i-1,j+1,k+1),s(i  ,j+1,k+1));
 
-                 smin(3) = std::min(s(i-1,j  ,k-1),s(i  ,j  ,k-1),s(i-1,j+1,k-1),s(i-1,j  ,k  ),
-                                    s(i  ,j+1,k-1),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i  ,j+1,k  ));
-                 smax(3) = std::max(s(i-1,j  ,k-1),s(i  ,j  ,k-1),s(i-1,j+1,k-1),s(i-1,j  ,k  ),
-                                    s(i  ,j+1,k-1),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i  ,j+1,k  ));
+                 smin(3) = min(s(i-1,j  ,k-1),s(i  ,j  ,k-1),s(i-1,j+1,k-1),s(i-1,j  ,k  ),
+                               s(i  ,j+1,k-1),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i  ,j+1,k  ));
+                 smax(3) = max(s(i-1,j  ,k-1),s(i  ,j  ,k-1),s(i-1,j+1,k-1),s(i-1,j  ,k  ),
+                               s(i  ,j+1,k-1),s(i  ,j  ,k  ),s(i-1,j+1,k  ),s(i  ,j+1,k  ));
 
-                 smin(2) = std::min(s(i-1,j-1,k  ),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i-1,j-1,k+1),
-                                    s(i  ,j  ,k  ),s(i  ,j-1,k+1),s(i-1,j  ,k+1),s(i  ,j  ,k+1));
-                 smax(2) = std::max(s(i-1,j-1,k  ),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i-1,j-1,k+1),
-                                    s(i  ,j  ,k  ),s(i  ,j-1,k+1),s(i-1,j  ,k+1),s(i  ,j  ,k+1));
+                 smin(2) = min(s(i-1,j-1,k  ),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i-1,j-1,k+1),
+                               s(i  ,j  ,k  ),s(i  ,j-1,k+1),s(i-1,j  ,k+1),s(i  ,j  ,k+1));
+                 smax(2) = max(s(i-1,j-1,k  ),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i-1,j-1,k+1),
+                               s(i  ,j  ,k  ),s(i  ,j-1,k+1),s(i-1,j  ,k+1),s(i  ,j  ,k+1));
 
-                 smin(1) = std::min(s(i-1,j-1,k-1),s(i  ,j-1,k-1),s(i-1,j  ,k-1),s(i-1,j-1,k  ),
-                                    s(i  ,j  ,k-1),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i  ,j  ,k  ));
-                 smax(1) = std::max(s(i-1,j-1,k-1),s(i  ,j-1,k-1),s(i-1,j  ,k-1),s(i-1,j-1,k  ),
-                                    s(i  ,j  ,k-1),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i  ,j  ,k  ));
+                 smin(1) = min(s(i-1,j-1,k-1),s(i  ,j-1,k-1),s(i-1,j  ,k-1),s(i-1,j-1,k  ),
+                               s(i  ,j  ,k-1),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i  ,j  ,k  ));
+                 smax(1) = max(s(i-1,j-1,k-1),s(i  ,j-1,k-1),s(i-1,j  ,k-1),s(i-1,j-1,k  ),
+                               s(i  ,j  ,k-1),s(i  ,j-1,k  ),s(i-1,j  ,k  ),s(i  ,j  ,k  ));
 
                  for(int mm=1; mm<=8; ++mm){
-                    sc(mm) = std::max(std::min(sc(mm), smax(mm)), smin(mm));
+                    sc(mm) = max(min(sc(mm), smax(mm)), smin(mm));
                  }
 
                  // iterative loop
