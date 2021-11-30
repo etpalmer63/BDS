@@ -42,7 +42,7 @@ void bdsconc_3d (const amrex::MultiFab& s_mf,
                  int is_conserv);
 
 amrex::Real eval ( const amrex::Real s,
-                   amrex::Array1D<const amrex::Real,1,7> const& slope,
-                   amrex::Array1D<const amrex::Real,1,3> const& del );
+                   amrex::Array1D<amrex::Real,1,7>& slope,
+                   amrex::Array1D<amrex::Real,1,3>& del );
 
 #endif

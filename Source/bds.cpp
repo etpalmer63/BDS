@@ -120,13 +120,14 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
         const Box& bx = mfi.growntilebox(1); 
 
         Array4<const Real> const& s    = s_mf.array(mfi, comp);
-        Array4<      Real> const& sint = sint_mf.array(mfi);     //HACK -- how to make this i,j accessible?
+        Array4<      Real> const& sint = sint_mf.array(mfi);     //HACK -- how to make this i,j accessible? -- add k!?
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
         
 #if (AMREX_SPACEDIM ==2)                        
             // bicubic interpolation to corner points
             // (i,j,k) refers to lower corner of cell
+            // Added k index -- just placeholder for 2d
             sint(i,j,k) = (s(i-2,j-2,k) + s(i-2,j+1,k) + s(i+1,j-2,k) + s(i+1,j+1,k)
                     - 7.0*(s(i-2,j-1,k) + s(i-2,j  ,k) + s(i-1,j-2,k) + s(i  ,j-2,k) +
                            s(i-1,j+1,k) + s(i  ,j+1,k) + s(i+1,j-1,k) + s(i+1,j  ,k))
@@ -900,6 +901,8 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             Array1D<Real, 1, AMREX_SPACEDIM> p3;
             Array1D<Real, 1, AMREX_SPACEDIM> p4;
 
+            Array1D<Real, 1, 7> slope_roll;
+
             int ioff, joff, koff;
 
             Real isign,jsign,ksign;
@@ -921,11 +924,17 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                ioff = 0;
             }
 
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j,k,n-1);
+            }
+
+
             // centroid of rectangular volume
             del(1) = isign*0.5*hx - 0.5*uadv(i,j,k)*dt;
             del(2) = 0.0;
             del(3) = 0.0;
-            sedgex(i,j,k) = eval(s(i+ioff,j,k),slope(i+ioff,j,k),del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
+            //sedgex(i,j,k) = eval(s(i+ioff,j,k),slope(i+ioff,j,k),del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
+            sedgex(i,j,k) = eval(s(i+ioff,j,k),slope_roll,del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
 
             // source term
             sedgex(i,j,k) = sedgex(i,j,k) - dt2*sedgex(i,j,k)*ux(i+ioff,j,k);
@@ -940,6 +949,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             } else {
                jsign = -1.0;
                joff = 1;
+            }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k,n-1);
             }
 
             u = 0.0;
@@ -959,20 +972,24 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p3(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k)*dt;
             p3(3) = 0.0;
 
+
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); //call eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k,:),del,val1)
+            //val1 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); //call eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k,:),del,val1)
+            val1 = eval(s(i+ioff,j+joff,k),slope_roll,del); 
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); //call eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k,:),del,val2)
+            //val2 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); 
+            val2 = eval(s(i+ioff,j+joff,k),slope_roll,del); 
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            val3 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
+            //val3 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
+            val3 = eval(s(i+ioff,j+joff,k),slope_roll,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -990,6 +1007,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             } else {
                ksign = -1.0;
                koff = 1;
+            }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1018,30 +1039,31 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(2) = jsign*0.5*hy - vv*dt;
             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k+1)*dt;
 
+
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1064,6 +1086,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             } else {
                ksign = -1.0;
                koff = 0;
+            }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1095,27 +1121,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1147,6 +1173,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 0;
             }
 
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k,n-1);
+            }
+
             u = 0.0;
             if (uadv(i,j,k)*uadv(i,j+joff,k) > 0) {
                u = uadv(i,j+joff,k);
@@ -1167,17 +1197,17 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
+            val1 = eval(s(i+ioff,j+joff,k),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
+            val2 = eval(s(i+ioff,j+joff,k),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            val3 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
+            val3 = eval(s(i+ioff,j+joff,k),slope_roll,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -1195,6 +1225,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             } else {
                ksign = -1.0;
                koff = 1;
+            }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1226,27 +1260,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1269,6 +1303,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             } else {
                ksign = -1.0;
                koff = 0;
+            }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1300,27 +1338,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1352,6 +1390,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 1;
             }
 
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j,k+koff,n-1);
+            }
+
             u = 0.0;
             if (uadv(i,j,k)*uadv(i,j,k+koff) > 0) {
                u = uadv(i,j,k+koff);
@@ -1372,17 +1414,17 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+            val1 = eval(s(i+ioff,j,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+            val2 = eval(s(i+ioff,j,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            val3 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+            val3 = eval(s(i+ioff,j,k+koff),slope_roll,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -1401,6 +1443,11 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                jsign = -1.0;
                joff = 1;
             }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
 
             uu = 0.0;
             if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
@@ -1431,27 +1478,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1474,6 +1521,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             } else {
                jsign = -1.0;
                joff = 0;
+            }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1505,27 +1556,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1557,6 +1608,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 0;
             }
 
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j,k+koff,n-1);
+            }
+
             u = 0.0;
             if (uadv(i,j,k)*uadv(i,j,k+koff) > 0) {
                u = uadv(i,j,k+koff);
@@ -1577,17 +1632,17 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+            val1 = eval(s(i+ioff,j,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+            val2 = eval(s(i+ioff,j,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            val3 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+            val3 = eval(s(i+ioff,j,k+koff),slope_roll,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -1605,6 +1660,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             } else {
                jsign = -1.0;
                joff = 1;
+            }
+
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1636,27 +1695,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1691,6 +1750,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                ww = wadv(i+ioff,j+joff,k);
             }
 
+            for(int n=1; n<=7; ++n){
+                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
             p1(1) = isign*0.5*hx;
             p1(2) = jsign*0.5*hy;
             p1(3) = ksign*0.5*hz;
@@ -1710,27 +1773,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3537,13 +3600,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
 }  //end subroutine bdsconc_3d
 
 Real eval (const Real s,
-           Array1D<const Real,1,7> const& slope, 
-           Array1D<const Real,1,3> const& del ){
+           Array1D<Real,1,7>& slope, 
+           Array1D<Real,1,3>& del ){
     //real(kind=dp_t), intent(  out) :: val
 
-    Real val = s + del(1)*slope(1) + del(2)*slope(2) + del(3)*slope(3)
-         + del(1)*del(2)*slope(4) + del(1)*del(3)*slope(5) + del(2)*del(3)*slope(6)
-         + del(1)*del(2)*del(3)*slope(7);
+    Real val = s + del(1)*slope(1)        + del(2)*slope(2)        + del(3)*slope(3)
+                 + del(1)*del(2)*slope(4) + del(1)*del(3)*slope(5) + del(2)*del(3)*slope(6)
+                 + del(1)*del(2)*del(3)*slope(7);
 
     return val;
 }
