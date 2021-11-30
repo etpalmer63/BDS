@@ -130,9 +130,9 @@ void main_main ()
     MultiFab s_new_mf(ba, dm, Ncomp, Nghost);
 
     //std::array<MultiFab, AMREX_SPACEDIM> umac_mf(ba, dm, 3, Nghost);
-    Array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
-                                                         MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost), 
-                                                         MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
+    std::array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
+                                                              MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost), 
+                                                              MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
     //MultiFab uVel(ba, dm, Ncomp, Nghost);
     //MultiFab vVel(ba, dm, Ncomp, Nghost);
     //MultiFab wVel(ba, dm, Ncomp, Nghost);

@@ -16,7 +16,7 @@ using namespace amrex;
 void bds (const MultiFab& s_mf,
           const Geometry& geom, 
           MultiFab& sn_mf,
-          Array<MultiFab, AMREX_SPACEDIM>& umac_mf,
+          std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
           Real dt,
           int comp,   //HACK -- so we could compute for multiple quantities of interest?
           int is_conserv){   //TODO: select each direction
@@ -803,11 +803,11 @@ void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
 
 void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conserv)
 
-    MultiFab const& s_mf,           
+    const MultiFab& s_mf,           
     const Geometry& geom,
-    MultiFab const& sn_mf,
-    MultiFab const& slope_mf,
-    Array<MultiFab, AMREX_SPACEDIM>& umac_mf,
+    MultiFab& sn_mf,
+    const MultiFab& slope_mf,
+    const std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
     const Real dt,
     int comp,
     int is_conserv){
@@ -846,16 +846,16 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
     //      for(int i=lo(1)-1; i<=hi(1)+1; ++i){
 
     
-    for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(ux_mf); mfi.isValid(); ++mfi){ 
 
-        const Box& bx = mfi.growntilebox(1);  //HACK -- adjustments here? -- probably need custom box
+        const Box& bx = mfi.growntilebox(1);
 
-        Array4<const Real> const& uadv  = umac_mf[0].array(mfi, comp);
-        Array4<const Real> const& vadv  = umac_mf[1].array(mfi, comp);
-        Array4<const Real> const& wadv  = umac_mf[2].array(mfi, comp);
-        Array4<      Real> const& ux    = ux_mf.array(mfi, comp);
-        Array4<      Real> const& vy    = vy_mf.array(mfi, comp);
-        Array4<      Real> const& wz    = wz_mf.array(mfi, comp);
+        Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+        Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+        Array4<const Real> const& wadv  = umac_mf[2].array(mfi);
+        Array4<      Real> const& ux    = ux_mf.array(mfi);
+        Array4<      Real> const& vy    = vy_mf.array(mfi);
+        Array4<      Real> const& wz    = wz_mf.array(mfi);
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
@@ -872,17 +872,16 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
     //   for(int j=lo(2); j<=hi(2); ++j){
     //      for(int i=lo(1); i<=hi(1)+1; ++i){ //HACK -- grow one in x-direction?
 
-    
+    // compute sedgex
+    for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
 
-    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
-
-        const Box& bx = mfi.tilebox();  //HACK -- adjustments here? -- probably need custom box
+        const Box& bx = mfi.tilebox();
 
         Array4<const Real> const& s      = s_mf.array(mfi, comp);
-        Array4<const Real> const& slope  = slope_mf.array(mfi);  // 6 components? 
-        Array4<const Real> const& uadv  = umac_mf[0].array(mfi, comp);
-        Array4<const Real> const& vadv  = umac_mf[1].array(mfi, comp);
-        Array4<const Real> const& wadv  = umac_mf[2].array(mfi, comp);
+        Array4<const Real> const& slope  = slope_mf.array(mfi);
+        Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+        Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+        Array4<const Real> const& wadv  = umac_mf[2].array(mfi);
 
         //local variables
         Array4<      Real> const& ux    = ux_mf.array(mfi);
@@ -892,14 +891,14 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
         Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
         Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
         
-        ParallelFor(bx.grow(Direction::x,1), [=] AMREX_GPU_DEVICE (int i, int j, int k){
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
             //local variables
-            Array1D<Real, 1, AMREX_SPACEDIM> del;
-            Array1D<Real, 1, AMREX_SPACEDIM> p1;
-            Array1D<Real, 1, AMREX_SPACEDIM> p2;
-            Array1D<Real, 1, AMREX_SPACEDIM> p3;
-            Array1D<Real, 1, AMREX_SPACEDIM> p4;
+            Array1D<Real, 1, 3> del;
+            Array1D<Real, 1, 3> p1;
+            Array1D<Real, 1, 3> p2;
+            Array1D<Real, 1, 3> p3;
+            Array1D<Real, 1, 3> p4;
 
             Array1D<Real, 1, 7> slope_roll;
 
@@ -925,7 +924,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j,k,n-1);
+                slope_roll(n) = slope(i+ioff,j,k,n-1);
             }
 
 
@@ -952,7 +951,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k,n-1);
             }
 
             u = 0.0;
@@ -1010,7 +1009,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1089,7 +1088,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1174,7 +1173,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k,n-1);
             }
 
             u = 0.0;
@@ -1228,7 +1227,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1306,7 +1305,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1391,7 +1390,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j,k+koff,n-1);
             }
 
             u = 0.0;
@@ -1445,7 +1444,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
 
@@ -1524,7 +1523,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1609,7 +1608,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j,k+koff,n-1);
             }
 
             u = 0.0;
@@ -1663,7 +1662,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1751,7 +1750,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) == slope(i+ioff,j+joff,k+koff,n-1);
+                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             p1(1) = isign*0.5*hx;
@@ -3540,9 +3539,9 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             Array4<const Real> const& sedgey  = sedgey_mf.array(mfi);
             Array4<const Real> const& sedgez  = sedgez_mf.array(mfi);
 
-            Array4<const Real> const& uadv  = umac_mf[0].array(mfi, comp);
-            Array4<const Real> const& vadv  = umac_mf[1].array(mfi, comp);
-            Array4<const Real> const& wadv  = umac_mf[2].array(mfi, comp);
+            Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+            Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+            Array4<const Real> const& wadv  = umac_mf[2].array(mfi);
 
             ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
@@ -3568,9 +3567,9 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             Array4<const Real> const& s  = s_mf.array(mfi, comp);
             Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
 
-            Array4<const Real> const& uadv  = umac_mf[0].array(mfi, comp);
-            Array4<const Real> const& vadv  = umac_mf[1].array(mfi, comp);
-            Array4<const Real> const& wadv  = umac_mf[2].array(mfi, comp);
+            Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+            Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+            Array4<const Real> const& wadv  = umac_mf[2].array(mfi);
 
             Array4<const Real> const& sedgex  = sedgex_mf.array(mfi);
             Array4<const Real> const& sedgey  = sedgey_mf.array(mfi);
