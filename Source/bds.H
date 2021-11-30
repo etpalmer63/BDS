@@ -9,7 +9,7 @@
 
 void bds (const amrex::MultiFab& s_mf,
           const amrex::Geometry& geom,      
-                amrex::MultiFab& sn_mf,
+          const amrex::MultiFab& sn_mf,
           std::array<amrex::MultiFab, AMREX_SPACEDIM>& umac_mf,
           amrex::Real dt,
           int comp,
@@ -17,7 +17,7 @@ void bds (const amrex::MultiFab& s_mf,
 
 void bdsslope (const amrex::MultiFab& s_mf,   
                const amrex::Geometry& geom,
-                     amrex::MultiFab& slope_mf,
+               const amrex::MultiFab& slope_mf,
                int comp);
 
 /*
@@ -34,7 +34,7 @@ void bdsconc_2d (amrex::Array1D<const int > const& lo,
 
 void bdsconc_3d (const amrex::MultiFab& s_mf,   
                  const amrex::Geometry& geom,
-                 amrex::MultiFab& sn_mf,
+                 const amrex::MultiFab& sn_mf,
                  amrex::MultiFab& slope_mf,
                  amrex::Array<amrex::MultiFab, AMREX_SPACEDIM>& umac_mf,
                  const amrex::Real dt,
