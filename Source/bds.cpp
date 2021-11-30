@@ -114,7 +114,6 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
     //for(int j = lo[1]-1; j<=hi[1]+2; ++j){
     //for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k; }}} Print() << std::endl;
 
-
     for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){ 
 
         const Box& bx = mfi.growntilebox(1); 
@@ -162,15 +161,14 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
 
     }
 
-
-    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){ 
 
         const Box& bx = mfi.growntilebox(1); 
 
         Array4<const Real> const& s     = s_mf.array(mfi, comp);
         Array4<const Real> const& sint  = sint_mf.array(mfi);
         Array4<      Real> const& slope = slope_mf.array(mfi);
-
+        
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
             
             // compute initial estimates of slopes from unlimited corner points
@@ -187,25 +185,25 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
             Array1D<Real, 1, 4> sc; 
 
             // sx
-            slope(i,j,k,1) = 0.5*(sint(i+1,j+1,k) + sint(i+1,j,k) - sint(i,j+1,k) - sint(i,j,k)) / hx;
+            slope(i,j,k,0) = 0.5*(sint(i+1,j+1,k) + sint(i+1,j,k) - sint(i,j+1,k) - sint(i,j,k)) / hx;
             // sy
-            slope(i,j,k,2) = 0.5*(sint(i+1,j+1,k) - sint(i+1,j,k) + sint(i,j+1,k) - sint(i,j,k)) / hy;
+            slope(i,j,k,1) = 0.5*(sint(i+1,j+1,k) - sint(i+1,j,k) + sint(i,j+1,k) - sint(i,j,k)) / hy;
             // sxy
-            slope(i,j,k,3) =     (sint(i+1,j+1,k) - sint(i+1,j,k) - sint(i,j+1,k) + sint(i,j,k)) / (hx*hy);
+            slope(i,j,k,2) =     (sint(i+1,j+1,k) - sint(i+1,j,k) - sint(i,j+1,k) + sint(i,j,k)) / (hx*hy);
 
             if (limit_slopes) {
 
                 // ++ / sint(i+1,j+1)
-                sc(4) = s(i,j,k) + 0.5*(hx*slope(i,j,k,1) + hy*slope(i,j,k,2)) + 0.25*hx*hy*slope(i,j,k,3);
+                sc(4) = s(i,j,k) + 0.5*(hx*slope(i,j,k,0) + hy*slope(i,j,k,1)) + 0.25*hx*hy*slope(i,j,k,2);
 
                 // +- / sint(i+1,j  )
-                sc(3) = s(i,j,k) + 0.5*(hx*slope(i,j,k,1) - hy*slope(i,j,k,2)) - 0.25*hx*hy*slope(i,j,k,3);
+                sc(3) = s(i,j,k) + 0.5*(hx*slope(i,j,k,0) - hy*slope(i,j,k,1)) - 0.25*hx*hy*slope(i,j,k,2);
 
                 // -+ / sint(i  ,j+1)
-                sc(2) = s(i,j,k) - 0.5*(hx*slope(i,j,k,1) - hy*slope(i,j,k,2)) - 0.25*hx*hy*slope(i,j,k,3);
+                sc(2) = s(i,j,k) - 0.5*(hx*slope(i,j,k,0) - hy*slope(i,j,k,1)) - 0.25*hx*hy*slope(i,j,k,2);
 
                 // -- / sint(i  ,j  )
-                sc(1) = s(i,j,k) - 0.5*(hx*slope(i,j,k,1) + hy*slope(i,j,k,2)) + 0.25*hx*hy*slope(i,j,k,3);
+                sc(1) = s(i,j,k) - 0.5*(hx*slope(i,j,k,0) + hy*slope(i,j,k,1)) + 0.25*hx*hy*slope(i,j,k,2);
 
                 // enforce max/min bounds
                 smin(4) = min(s(i,j,k), s(i+1,j,k), s(i,j+1,k), s(i+1,j+1,k));
@@ -271,11 +269,11 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                 // final slopes
 
                 // sx
-                slope(i,j,k,1) = 0.5*( sc(4) + sc(3) -sc(1) - sc(2) )/hx;
+                slope(i,j,k,0) = 0.5*( sc(4) + sc(3) -sc(1) - sc(2) )/hx;
                 // sy
-                slope(i,j,k,2) = 0.5*( sc(4) + sc(2) -sc(1) - sc(3) )/hy;
+                slope(i,j,k,1) = 0.5*( sc(4) + sc(2) -sc(1) - sc(3) )/hy;
                 // sxy
-                slope(i,j,k,3) =     ( sc(1) + sc(4) -sc(2) - sc(3) )/(hx*hy);
+                slope(i,j,k,2) =     ( sc(1) + sc(4) -sc(2) - sc(3) )/(hx*hy);
 
             } // if(limit_slopes)
 
@@ -291,43 +289,43 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
 
              // compute initial estimates of slopes from unlimited corner points
              // sx
-             slope(i,j,k,1) = 0.25*(( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
+             slope(i,j,k,0) = 0.25*(( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
                                      +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
                                      +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1) )) / hx;
 
              // sy
-             slope(i,j,k,2) = 0.25*(( sint(i  ,j+1,k  ) + sint(i+1,j+1,k  )
+             slope(i,j,k,1) = 0.25*(( sint(i  ,j+1,k  ) + sint(i+1,j+1,k  )
                                      +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k  ) + sint(i+1,j  ,k  )
                                      +sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1) )) / hy;
 
              // sz
-             slope(i,j,k,3) = 0.25*(( sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1)
+             slope(i,j,k,2) = 0.25*(( sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1)
                                      +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k  ) + sint(i+1,j  ,k  )
                                      +sint(i  ,j+1,k  ) + sint(i+1,j+1,k  ) )) / hz;
 
              // sxy
-             slope(i,j,k,4) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i  ,j  ,k+1)
+             slope(i,j,k,3) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i  ,j  ,k+1)
                                      +sint(i+1,j+1,k  ) + sint(i+1,j+1,k+1) )
                                    -( sint(i+1,j  ,k  ) + sint(i+1,j  ,k+1)
                                      +sint(i  ,j+1,k  ) + sint(i  ,j+1,k+1) )) / (hx*hy);
 
              // sxz
-             slope(i,j,k,5) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
+             slope(i,j,k,4) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
                                      +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i+1,j  ,k  ) + sint(i+1,j+1,k  )
                                      +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1) )) / (hx*hz);
 
              // syz
-             slope(i,j,k,6) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i+1,j  ,k  )
+             slope(i,j,k,5) = 0.5*( ( sint(i  ,j  ,k  ) + sint(i+1,j  ,k  )
                                      +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k+1) + sint(i+1,j  ,k+1)
                                      +sint(i  ,j+1,k  ) + sint(i+1,j+1,k  ) )) / (hy*hz);
 
              // sxyz
-             slope(i,j,k,7) =       (-sint(i  ,j  ,k  ) + sint(i+1,j  ,k  ) + sint(i  ,j+1,k  )
+             slope(i,j,k,6) =       (-sint(i  ,j  ,k  ) + sint(i+1,j  ,k  ) + sint(i  ,j+1,k  )
                                      +sint(i  ,j  ,k+1) - sint(i+1,j+1,k  ) - sint(i+1,j  ,k+1)
                                      -sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) ) / (hx*hy*hz);
 
@@ -335,51 +333,51 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
 
                  // +++ / sint(i+1,j+1,k+1)
                  sc(8) = s(i,j,k)
-                      +0.5  *(     hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
-                      +0.25 *(  hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                      +0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(     hx*slope(i,j,k,0)+   hy*slope(i,j,k,1)+   hz*slope(i,j,k,2))
+                      +0.25 *(  hx*hy*slope(i,j,k,3)+hx*hz*slope(i,j,k,4)+hy*hz*slope(i,j,k,5))
+                      +0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // ++- / sint(i+1,j+1,k  )
                  sc(7) = s(i,j,k)
-                      +0.5  *(     hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
-                      +0.25 *(  hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                      -0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(     hx*slope(i,j,k,0)+   hy*slope(i,j,k,1)-   hz*slope(i,j,k,2))
+                      +0.25 *(  hx*hy*slope(i,j,k,3)-hx*hz*slope(i,j,k,4)-hy*hz*slope(i,j,k,5))
+                      -0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // +-+ / sint(i+1,j  ,k+1)
                  sc(6) = s(i,j,k)
-                      +0.5  *(     hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
-                      +0.25 *( -hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                      -0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(     hx*slope(i,j,k,0)-   hy*slope(i,j,k,1)+   hz*slope(i,j,k,2))
+                      +0.25 *( -hx*hy*slope(i,j,k,3)+hx*hz*slope(i,j,k,4)-hy*hz*slope(i,j,k,5))
+                      -0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // +-- / sint(i+1,j  ,k  )
                  sc(5) = s(i,j,k)
-                      +0.5  *(     hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
-                      +0.25 *( -hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                      +0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(     hx*slope(i,j,k,0)-   hy*slope(i,j,k,1)-   hz*slope(i,j,k,2))
+                      +0.25 *( -hx*hy*slope(i,j,k,3)-hx*hz*slope(i,j,k,4)+hy*hz*slope(i,j,k,5))
+                      +0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // -++ / sint(i  ,j+1,k+1)
                  sc(4) = s(i,j,k)
-                      +0.5  *(    -hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
-                      +0.25 *( -hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                      -0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(    -hx*slope(i,j,k,0)+   hy*slope(i,j,k,1)+   hz*slope(i,j,k,2))
+                      +0.25 *( -hx*hy*slope(i,j,k,3)-hx*hz*slope(i,j,k,4)+hy*hz*slope(i,j,k,5))
+                      -0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // -+- / sint(i  ,j+1,k  )
                  sc(3) = s(i,j,k)
-                      +0.5  *(    -hx*slope(i,j,k,1)+   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
-                      +0.25 *( -hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                      +0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(    -hx*slope(i,j,k,0)+   hy*slope(i,j,k,1)-   hz*slope(i,j,k,2))
+                      +0.25 *( -hx*hy*slope(i,j,k,3)+hx*hz*slope(i,j,k,4)-hy*hz*slope(i,j,k,5))
+                      +0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // --+ / sint(i  ,j  ,k+1)
                  sc(2) = s(i,j,k)
-                      +0.5  *(    -hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)+   hz*slope(i,j,k,3))
-                      +0.25 *(  hx*hy*slope(i,j,k,4)-hx*hz*slope(i,j,k,5)-hy*hz*slope(i,j,k,6))
-                      +0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(    -hx*slope(i,j,k,0)-   hy*slope(i,j,k,1)+   hz*slope(i,j,k,2))
+                      +0.25 *(  hx*hy*slope(i,j,k,3)-hx*hz*slope(i,j,k,4)-hy*hz*slope(i,j,k,5))
+                      +0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // ---/ sint(i  ,j  ,k  )
                  sc(1) = s(i,j,k)
-                      +0.5  *(    -hx*slope(i,j,k,1)-   hy*slope(i,j,k,2)-   hz*slope(i,j,k,3))
-                      +0.25 *(  hx*hy*slope(i,j,k,4)+hx*hz*slope(i,j,k,5)+hy*hz*slope(i,j,k,6))
-                      -0.125*hx*hy*hz*slope(i,j,k,7);
+                      +0.5  *(    -hx*slope(i,j,k,0)-   hy*slope(i,j,k,1)-   hz*slope(i,j,k,2))
+                      +0.25 *(  hx*hy*slope(i,j,k,3)+hx*hz*slope(i,j,k,4)+hy*hz*slope(i,j,k,5))
+                      -0.125*hx*hy*hz*slope(i,j,k,6);
 
                  // enforce max/min bounds
                  smin(8) = min(s(i  ,j  ,k  ),s(i+1,j  ,k  ),s(i  ,j+1,k  ),s(i  ,j  ,k+1),
@@ -473,43 +471,43 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                  // final slopes
 
                  // sx
-                 slope(i,j,k,1) = 0.25*( ( sc(5) + sc(7)
+                 slope(i,j,k,0) = 0.25*( ( sc(5) + sc(7)
                                           +sc(6) + sc(8))
                                         -( sc(1) + sc(3)
                                           +sc(2) + sc(4)) ) / hx;
 
                  // sy
-                 slope(i,j,k,2) = 0.25*( ( sc(3) + sc(7)
+                 slope(i,j,k,1) = 0.25*( ( sc(3) + sc(7)
                                           +sc(4) + sc(8))
                                         -( sc(1) + sc(5)
                                           +sc(2) + sc(6)) ) / hy;
 
                  // sz
-                 slope(i,j,k,3) = 0.25*( ( sc(2) + sc(6)
+                 slope(i,j,k,2) = 0.25*( ( sc(2) + sc(6)
                                           +sc(4) + sc(8))
                                         -( sc(1) + sc(5)
                                           +sc(3) + sc(7)) ) / hz;
 
                  // sxy
-                 slope(i,j,k,4) = 0.5*( ( sc(1) + sc(2)
+                 slope(i,j,k,3) = 0.5*( ( sc(1) + sc(2)
                                          +sc(7) + sc(8))
                                        -( sc(5) + sc(6)
                                          +sc(3) + sc(4)) ) / (hx*hy);
 
                  // sxz
-                 slope(i,j,k,5) = 0.5*( ( sc(1) + sc(3)
+                 slope(i,j,k,4) = 0.5*( ( sc(1) + sc(3)
                                          +sc(6) + sc(8))
                                        -( sc(5) + sc(7)
                                          +sc(2) + sc(4)) ) / (hx*hz);
 
                  // syz
-                 slope(i,j,k,6) = 0.5*( ( sc(1) + sc(5)
+                 slope(i,j,k,5) = 0.5*( ( sc(1) + sc(5)
                                          +sc(4) + sc(8))
                                        -( sc(2) + sc(6)
                                          +sc(3) + sc(7)) ) / (hy*hz);
 
                  // sxyz
-                 slope(i,j,k,7) = (-sc(1) + sc(5) + sc(3)
+                 slope(i,j,k,6) = (-sc(1) + sc(5) + sc(3)
                                    +sc(2) - sc(7) - sc(6)
                                    -sc(4) + sc(8) ) / (hx*hy*hz);
 
