@@ -21,12 +21,6 @@ void bdsslope (const amrex::MultiFab& s_mf,
                int comp);
 
 /*
-void bdsslope_2d (amrex::Array1D<const int > const& lo,
-                  amrex::Array1D<const int> const& hi,
-                  amrex::Array2D<const amrex::Real> const& s,      const int ng_s,
-                  amrex::Array3D<      amrex::Real> const& slope,  const int ng_c,
-                  amrex::Array1D<const amrex::Real> const& dx);
-
 void bdsconc_2d (amrex::Array1D<const int > const& lo,
                  amrex::Array1D<const int > const& hi,
                  amrex::Array2D<const amrex::Real> const& s,
@@ -36,21 +30,19 @@ void bdsconc_2d (amrex::Array1D<const int > const& lo,
                  amrex::Array2D<const amrex::Real> const& vadv,    const int ng_u,
                  amrex::Array1D<const int > const& dx,      const amrex::Real dt,
                  const bool is_conserv);
-
-void bdsconc_3d (amrex::Array1D<const int > const& lo, 
-                 amrex::Array1D<const int > const& hi, 
-                 amrex::Array3D<const amrex::Real> const& s,
-                 amrex::Array3D<      amrex::Real> const& sn,      const int ng_s,
-                 amrex::Array4< const amrex::Real> const& slope,   const int ng_c,
-                 amrex::Array3D<const amrex::Real> const& uadv,
-                 amrex::Array3D<const amrex::Real> const& vadv,
-                 amrex::Array3D<const amrex::Real> const& wadv,    const int ng_u,
-                 amrex::Array1D<const int > const& dx,      const amrex::Real dt,
-                 const bool is_conserv);
-
-Real eval ( const amrex::Real s,
-            amrex::Array1D<const Real> const& slope,
-            amrex::Array1D<const Real> const& del );
-
 */
+
+void bdsconc_3d (const amrex::MultiFab& s_mf,   
+                 const amrex::Geometry& geom,
+                 amrex::MultiFab& sn_mf,
+                 amrex::MultiFab& slope_mf,
+                 amrex::Array<amrex::MultiFab, AMREX_SPACEDIM>& umac_mf,
+                 const amrex::Real dt,
+                 int comp,
+                 int is_conserv);
+
+amrex::Real eval ( const amrex::Real s,
+                   amrex::Array1D<const amrex::Real,1,7> const& slope,
+                   amrex::Array1D<const amrex::Real,1,3> const& del );
+
 #endif

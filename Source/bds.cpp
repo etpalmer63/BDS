@@ -18,25 +18,11 @@ void bds (const MultiFab& s_mf,
           MultiFab& sn_mf,
           Array<MultiFab, AMREX_SPACEDIM>& umac_mf,
           Real dt,
-          int comp, //before this was automatic ?
-          int is_conserv){
+          int comp,   //HACK -- so we could compute for multiple quantities of interest?
+          int is_conserv){   //TODO: select each direction
         
-    //const BoxArray& ba, const Geometry& geom, const DistributionMapping& dmap, int nlevs,
-    //const MultiFab& s_mf,
-    //MultiFab& sn_mf,
-    //const MultiFab& umac_mf, 
-    //GpuArray<Real, AMREX_SPACEDIM> const& dx, Real dt, 
-    //Array1D<const bool, 1, AMREX_SPACEDIM> const& is_conserv){
-
-
-    //Array4< const Real> sop = s.array();
-    //Array4<       Real> snp = sn.array();
-    //Array4< const Real> slopep = slope.array();
-    //Array4< const Real> uadvp = umac.array();
-    //Array4< const Real> vadvp = umac.array();
-    //Array4< const Real> wadvp = umac.array();
-
-    //int dm,ng_s,ng_c,ng_u,n,i;
+        //TODO: levels
+        
 
     BoxArray ba = s_mf.boxArray();
     DistributionMapping dmap = s_mf.DistributionMap();
@@ -46,7 +32,9 @@ void bds (const MultiFab& s_mf,
     int nslope = (AMREX_SPACEDIM == 2) ? 3 : 7;
     MultiFab slope_mf(ba,dmap,nslope,1);  
     
+    bdsslope(s_mf, geom, slope_mf, comp);
 
+    bdsconc_3d(s_mf, geom, sn_mf, slope_mf, umac_mf, dt, comp, is_conserv);
 
 /*    for(int n=1;n<=nlevs;++n){
        for( int i = 1;i<s(n)%nboxes; ++i){
@@ -77,7 +65,7 @@ void bds (const MultiFab& s_mf,
              wadvp  => dataptr(umac(n,3), i)
              // only advancing the tracer
              for(int comp=2; comp<=s(n)%nc; ++comp){  */
-                bdsslope(s_mf, geom, slope_mf, comp);
+                //bdsslope(s_mf, geom, slope_mf, comp);
                 
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
@@ -95,177 +83,9 @@ void bds (const MultiFab& s_mf,
 
 }  //end subroutine bds
 
-#if (0)
-void bdsslope_2d(//lo,hi,s,ng_s,slope,ng_c,dx)
-
-    //use probin_module, only: limit_slopes // global constant
-
-    Array1D<const int > const& lo,    Array1D<const int> const& hi, 
-    Array2D<const Real> const& s,     const int ng_s,
-    Array3D<      Real> const& slope, const int ng_c,
-    Array1D<const Real> const& dx){
-
-    // local variables
-    Array2D<Real,1,2,1,2> sint; //HACK -- wrong, just trying to compile
-
-    Array1D<Real, 1, 4> diff;
-    Array1D<Real, 1, 4> smin;
-    Array1D<Real, 1, 4> smax;
-    Array1D<Real, 1, 4> sc;
-
-    Real hx,hy,eps;
-    Real sumloc,redfac,redmax,div,kdp,sumdif,sgndif;
-    int  i,j,ll,mm;
-
-    // nodal with one ghost cell
-    //allocate(sint(lo(1)-1:hi(1)+2,lo(2)-1:hi(2)+2)) //HACK -- wrong, just trying to compile
-
-    hx = dx(1);
-    hy = dx(2);
-
-    eps = 1.0e-10;
-
-   
-
-    // bicubic interpolation to corner points
-    // (i,j,k) refers to lower corner of cell
-    for(int j = lo(2)-1; j<=hi(2)+2; ++j){
-       for(int i = lo(1)-1; i<=hi(1)+2; ++i){
-          sint(i,j) = (s(i-2,j-2) + s(i-2,j+1) + s(i+1,j-2) + s(i+1,j+1)
-               - 7.0*(s(i-2,j-1) + s(i-2,j  ) + s(i-1,j-2) + s(i  ,j-2) +
-                       s(i-1,j+1) + s(i  ,j+1) + s(i+1,j-1) + s(i+1,j  ))
-              + 49.0*(s(i-1,j-1) + s(i  ,j-1) + s(i-1,j  ) + s(i  ,j  )) ) / 144.0;
-       }
-    }
-
-    for(int j = lo(2)-1; j<=hi(2)+1; ++j){
-       for(int i = lo(1)-1; i<=hi(1)+1; ++i){
-
-          // compute initial estimates of slopes from unlimited corner points
-
-          // sx
-          slope(i,j,1) = 0.5*(sint(i+1,j+1) + sint(i+1,j  ) -
-                              sint(i  ,j+1) - sint(i  ,j  )) / hx;
-
-          // sy
-          slope(i,j,2) = 0.5*(sint(i+1,j+1) - sint(i+1,j  ) +
-                              sint(i  ,j+1) - sint(i  ,j  )) / hy;
-
-          // sxy
-          slope(i,j,3) =     (sint(i+1,j+1) - sint(i+1,j  ) -
-                              sint(i  ,j+1) + sint(i  ,j  )) / (hx*hy);
-
-          if (limit_slopes) {
-
-              // ++ / sint(i+1,j+1)
-              sc(4) = s(i,j) + 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2))
-                   + 0.25*hx*hy*slope(i,j,3);
-
-              // +- / sint(i+1,j  )
-              sc(3) = s(i,j) + 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2))
-                   - 0.25*hx*hy*slope(i,j,3);
-
-              // -+ / sint(i  ,j+1)
-              sc(2) = s(i,j) - 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2))
-                   - 0.25*hx*hy*slope(i,j,3);
-
-              // -- / sint(i  ,j  )
-              sc(1) = s(i,j) - 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2))
-                   + 0.25*hx*hy*slope(i,j,3);
-
-              // enforce max/min bounds
-              smin(4) = min(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
-              smax(4) = max(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
-
-              smin(3) = min(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
-              smax(3) = max(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
-
-              smin(2) = min(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
-              smax(2) = max(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
-
-              smin(1) = min(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
-              smax(1) = max(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
-
-              for(int mm=1; mm<=4; ++mm){
-                 sc(mm) = max(min(sc(mm), smax(mm)), smin(mm));
-              }
-
-              // iterative loop
-              for(int ll=1; ll<=3; ++ll){
-                 sumloc = 0.25*(sc(4) + sc(3) + sc(2) + sc(1));
-                 sumdif = (sumloc - s(i,j))*4.0;
-                 sgndif = sign(1.0,sumdif);
-
-                 for(int mm=1; mm<=4; ++mm){
-                    diff(mm) = (sc(mm) - s(i,j))*sgndif;
-                 }
-
-                 kdp = 0;
-
-                 for(int mm=1; mm<=4; ++mm){
-                    if (diff(mm) > eps) {
-                       kdp = kdp+1;
-                    }
-                 }
-
-                 for(int mm=1; mm<=4; ++mm){
-                    if (kdp<1) {
-                       div = 1.0;
-                    } else {
-                       div = dble(kdp);
-                    }
-
-                    if (diff(mm)>eps) {
-                       redfac = sumdif*sgndif/div;
-                       kdp = kdp-1;
-                    } else {
-                       redfac = 0.0;
-                    }
-
-                    if (sgndif > 0.0) {
-                       redmax = sc(mm) - smin(mm);
-                    } else {
-                       redmax = smax(mm) - sc(mm);
-                    }
-
-                    redfac = min(redfac,redmax);
-                    sumdif = sumdif - redfac*sgndif;
-                    sc(mm) = sc(mm) - redfac*sgndif;
-                 }
-              } // end iterative loop
-
-              // final slopes
-
-              // sx
-              slope(i,j,1) = 0.5*( sc(4) + sc(3)
-                                    -sc(1) - sc(2))/hx;
-
-              // sy
-              slope(i,j,2) = 0.5*( sc(4) + sc(2)
-                                    -sc(1) - sc(3))/hy;
-
-              // sxy
-              slope(i,j,3) = ( sc(1) + sc(4)
-                          -sc(2) - sc(3) ) / (hx*hy);
-
-          } // end if(limit_slopes)
-
-       }
-    }
-    //deallocate(sint); //HACK -- wrong, just trying to compile
-}  //end subroutine bdsslope_2d
-#endif
 
 void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, int comp){
 
-        //use probin_module, only: limit_slopes //global constant
-
-        //GpuArray<Real, AMREX_SPACEDIM> const& lo,    GpuArray<Real, AMREX_SPACEDIM> const& hi,
-        //MultiFab const& s_mf,     const int ng_s,
-        //MultiFab& slope_mf, const int ng_c,
-        //GpuArray<Real, AMREX_SPACEDIM> const& dx, 
-        //const BoxArray& ba, const Geometry& geom, 
-        //const DistributionMapping& dmap){
 
     BoxArray ba = s_mf.boxArray();
     DistributionMapping dmap = s_mf.DistributionMap();
@@ -307,10 +127,10 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
 #if (AMREX_SPACEDIM ==2)                        
             // bicubic interpolation to corner points
             // (i,j,k) refers to lower corner of cell
-            sint(i,j) = (s(i-2,j-2) + s(i-2,j+1) + s(i+1,j-2) + s(i+1,j+1)
-                  - 7.0*(s(i-2,j-1) + s(i-2,j  ) + s(i-1,j-2) + s(i  ,j-2) +
-                         s(i-1,j+1) + s(i  ,j+1) + s(i+1,j-1) + s(i+1,j  ))
-                 + 49.0*(s(i-1,j-1) + s(i  ,j-1) + s(i-1,j  ) + s(i  ,j  )) ) / 144.0;
+            sint(i,j,k) = (s(i-2,j-2,k) + s(i-2,j+1,k) + s(i+1,j-2,k) + s(i+1,j+1,k)
+                    - 7.0*(s(i-2,j-1,k) + s(i-2,j  ,k) + s(i-1,j-2,k) + s(i  ,j-2,k) +
+                           s(i-1,j+1,k) + s(i  ,j+1,k) + s(i+1,j-1,k) + s(i+1,j  ,k))
+                   + 49.0*(s(i-1,j-1,k) + s(i  ,j-1,k) + s(i-1,j  ,k) + s(i  ,j  ,k)) ) / 144.0;
 #elif (AMREX_SPACEDIM ==3)                        
             // tricubic interpolation to corner points
             // (i,j,k) refers to lower corner of cell
@@ -358,6 +178,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
             Real sumloc, redfac, redmax, div, kdp, sumdif, sgndif;         
 
 #if (AMREX_SPACEDIM ==2)
+            // Added k index -- just placeholder for 2d
 
             Array1D<Real, 1, 4> diff;
             Array1D<Real, 1, 4> smin;
@@ -365,38 +186,38 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
             Array1D<Real, 1, 4> sc; 
 
             // sx
-            slope(i,j,1) = 0.5*(sint(i+1,j+1) + sint(i+1,j) - sint(i,j+1) - sint(i,j)) / hx;
+            slope(i,j,k,1) = 0.5*(sint(i+1,j+1,k) + sint(i+1,j,k) - sint(i,j+1,k) - sint(i,j,k)) / hx;
             // sy
-            slope(i,j,2) = 0.5*(sint(i+1,j+1) - sint(i+1,j) + sint(i,j+1) - sint(i,j)) / hy;
+            slope(i,j,k,2) = 0.5*(sint(i+1,j+1,k) - sint(i+1,j,k) + sint(i,j+1,k) - sint(i,j,k)) / hy;
             // sxy
-            slope(i,j,3) =     (sint(i+1,j+1) - sint(i+1,j) - sint(i,j+1) + sint(i,j)) / (hx*hy);
+            slope(i,j,k,3) =     (sint(i+1,j+1,k) - sint(i+1,j,k) - sint(i,j+1,k) + sint(i,j,k)) / (hx*hy);
 
             if (limit_slopes) {
 
                 // ++ / sint(i+1,j+1)
-                sc(4) = s(i,j) + 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2)) + 0.25*hx*hy*slope(i,j,3);
+                sc(4) = s(i,j,k) + 0.5*(hx*slope(i,j,k,1) + hy*slope(i,j,k,2)) + 0.25*hx*hy*slope(i,j,k,3);
 
                 // +- / sint(i+1,j  )
-                sc(3) = s(i,j) + 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2)) - 0.25*hx*hy*slope(i,j,3);
+                sc(3) = s(i,j,k) + 0.5*(hx*slope(i,j,k,1) - hy*slope(i,j,k,2)) - 0.25*hx*hy*slope(i,j,k,3);
 
                 // -+ / sint(i  ,j+1)
-                sc(2) = s(i,j) - 0.5*(hx*slope(i,j,1) - hy*slope(i,j,2)) - 0.25*hx*hy*slope(i,j,3);
+                sc(2) = s(i,j,k) - 0.5*(hx*slope(i,j,k,1) - hy*slope(i,j,k,2)) - 0.25*hx*hy*slope(i,j,k,3);
 
                 // -- / sint(i  ,j  )
-                sc(1) = s(i,j) - 0.5*(hx*slope(i,j,1) + hy*slope(i,j,2)) + 0.25*hx*hy*slope(i,j,3);
+                sc(1) = s(i,j,k) - 0.5*(hx*slope(i,j,k,1) + hy*slope(i,j,k,2)) + 0.25*hx*hy*slope(i,j,k,3);
 
                 // enforce max/min bounds
-                smin(4) = min(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
-                smax(4) = max(s(i,j), s(i+1,j), s(i,j+1), s(i+1,j+1));
+                smin(4) = min(s(i,j,k), s(i+1,j,k), s(i,j+1,k), s(i+1,j+1,k));
+                smax(4) = max(s(i,j,k), s(i+1,j,k), s(i,j+1,k), s(i+1,j+1,k));
 
-                smin(3) = min(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
-                smax(3) = max(s(i,j), s(i+1,j), s(i,j-1), s(i+1,j-1));
+                smin(3) = min(s(i,j,k), s(i+1,j,k), s(i,j-1,k), s(i+1,j-1,k));
+                smax(3) = max(s(i,j,k), s(i+1,j,k), s(i,j-1,k), s(i+1,j-1,k));
 
-                smin(2) = min(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
-                smax(2) = max(s(i,j), s(i-1,j), s(i,j+1), s(i-1,j+1));
+                smin(2) = min(s(i,j,k), s(i-1,j,k), s(i,j+1,k), s(i-1,j+1,k));
+                smax(2) = max(s(i,j,k), s(i-1,j,k), s(i,j+1,k), s(i-1,j+1,k));
 
-                smin(1) = min(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
-                smax(1) = max(s(i,j), s(i-1,j), s(i,j-1), s(i-1,j-1));
+                smin(1) = min(s(i,j,k), s(i-1,j,k), s(i,j-1,k), s(i-1,j-1,k));
+                smax(1) = max(s(i,j,k), s(i-1,j,k), s(i,j-1,k), s(i-1,j-1,k));
 
                 for(int mm=1; mm<=4; ++mm){
                    sc(mm) = max(min(sc(mm), smax(mm)), smin(mm));
@@ -405,11 +226,11 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                 // iterative loop
                 for(int ll=1; ll<=3; ++ll){
                    sumloc = 0.25*(sc(4) + sc(3) + sc(2) + sc(1));
-                   sumdif = (sumloc - s(i,j))*4.0;
+                   sumdif = (sumloc - s(i,j,k))*4.0;
                    sgndif = std::copysign(1.0,sumdif);
 
                    for(int mm=1; mm<=4; ++mm){
-                      diff(mm) = (sc(mm) - s(i,j))*sgndif;
+                      diff(mm) = (sc(mm) - s(i,j,k))*sgndif;
                    }
 
                    kdp = 0;
@@ -449,11 +270,11 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                 // final slopes
 
                 // sx
-                slope(i,j,1) = 0.5*( sc(4) + sc(3) -sc(1) - sc(2) )/hx;
+                slope(i,j,k,1) = 0.5*( sc(4) + sc(3) -sc(1) - sc(2) )/hx;
                 // sy
-                slope(i,j,2) = 0.5*( sc(4) + sc(2) -sc(1) - sc(3) )/hy;
+                slope(i,j,k,2) = 0.5*( sc(4) + sc(2) -sc(1) - sc(3) )/hy;
                 // sxy
-                slope(i,j,3) =     ( sc(1) + sc(4) -sc(2) - sc(3) )/(hx*hy);
+                slope(i,j,k,3) =     ( sc(1) + sc(4) -sc(2) - sc(3) )/(hx*hy);
 
             } // if(limit_slopes)
 
@@ -978,38 +799,35 @@ void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
 } // end subroutine bdsconc_2d
 #endif
 
-#if(0)
+
 void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conserv)
 
     MultiFab const& s_mf,           
     const Geometry& geom,
     MultiFab const& sn_mf,
-    MultiFab const& slope,
+    MultiFab const& slope_mf,
     Array<MultiFab, AMREX_SPACEDIM>& umac_mf,
     const Real dt,
     int comp,
     int is_conserv){
 
-    //Array3D<const Real> const& uadv,        
-    //Array3D<const Real> const& vadv,        
-    //Array3D<const Real> const& wadv,  const int ng_u,       
-    //Array1D<const int > const& dx,    const Real dt, 
-    //const bool is_conserv){                 
+    BoxArray ba = s_mf.boxArray();
+    DistributionMapping dmap = s_mf.DistributionMap();
+    GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables
-    int i,j,k,ioff,joff,koff,ll;
+    //int i,j,k,ll;
 
-    MultiFab sedgex_mf(ba, dm, 1, Nghost);
-    MultiFab sedgey_mf(ba, dm, 1, Nghost);
-    MultiFab sedgez_mf(ba, dm, 1, Nghost);
+    int Nghost = 1;
 
-    MultiFab ux_mf(ba,dm,1,Nghost);
-    MultiFab vy_mf(ba,dm,1,Nghost);
-    MultiFab wz_mf(ba,dm,1,Nghost);
+    MultiFab sedgex_mf(ba, dmap, 1, Nghost); //Nghost=1?
+    MultiFab sedgey_mf(ba, dmap, 1, Nghost);
+    MultiFab sedgez_mf(ba, dmap, 1, Nghost);
 
-    
+    MultiFab ux_mf(ba, dmap, 1, Nghost);
+    MultiFab vy_mf(ba, dmap, 1, Nghost);
+    MultiFab wz_mf(ba, dmap, 1, Nghost);
 
-    GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
     Real hx = dx[0];
     Real hy = dx[1];
     Real hz = dx[2];
@@ -1022,9 +840,9 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
     constexpr Real sixth = 1.0/6.0;
 
     // compute cell-centered ux, vy, and wz
-    for(int k=lo(3)-1; k<=hi(3)+1; ++k){
-       for(int j=lo(2)-1; j<=hi(2)+1; ++j){
-          for(int i=lo(1)-1; i<=hi(1)+1; ++i){
+    //for(int k=lo(3)-1; k<=hi(3)+1; ++k){
+    //   for(int j=lo(2)-1; j<=hi(2)+1; ++j){
+    //      for(int i=lo(1)-1; i<=hi(1)+1; ++i){
 
     
     for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
@@ -1049,9 +867,9 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
     }
 
     // compute sedgex on x-faces
-    for(int k=lo(3); k<=hi(3); ++k){
-       for(int j=lo(2); j<=hi(2); ++j){
-          for(int i=lo(1); i<=hi(1)+1; ++i){ //HACK -- grow one in x-direction?
+    //for(int k=lo(3); k<=hi(3); ++k){
+    //   for(int j=lo(2); j<=hi(2); ++j){
+    //      for(int i=lo(1); i<=hi(1)+1; ++i){ //HACK -- grow one in x-direction?
 
     
 
@@ -1064,12 +882,14 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
         Array4<const Real> const& uadv  = umac_mf[0].array(mfi, comp);
         Array4<const Real> const& vadv  = umac_mf[1].array(mfi, comp);
         Array4<const Real> const& wadv  = umac_mf[2].array(mfi, comp);
-        Array4<      Real> const& ux    = ux_mf.array(mfi, comp);
-        Array4<      Real> const& vy    = vy_mf.array(mfi, comp);
-        Array4<      Real> const& wz    = wz_mf.array(mfi, comp);
-        Array4<      Real> const& sedgex = sedgex_mf.array(mfi, comp);
-        Array4<      Real> const& sedgey = sedgey_mf.array(mfi, comp);
-        Array4<      Real> const& sedgez = sedgez_mf.array(mfi, comp);
+
+        //local variables
+        Array4<      Real> const& ux    = ux_mf.array(mfi);
+        Array4<      Real> const& vy    = vy_mf.array(mfi);
+        Array4<      Real> const& wz    = wz_mf.array(mfi);
+        Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
+        Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
+        Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
         
         ParallelFor(bx.grow(Direction::x,1), [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
@@ -1079,6 +899,8 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             Array1D<Real, 1, AMREX_SPACEDIM> p2;
             Array1D<Real, 1, AMREX_SPACEDIM> p3;
             Array1D<Real, 1, AMREX_SPACEDIM> p4;
+
+            int ioff, joff, koff;
 
             Real isign,jsign,ksign;
             Real uconv,vconv,wconv;
@@ -1929,9 +1751,9 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             sedgex(i,j,k) = sedgex(i,j,k) + dt*gamma/(2.0*hz);
 
         });
-    }
+    } // compute sedgex on x-faces
             
-
+#if(0)
     // compute sedgey on y-faces
     for(int k=lo(3); k<=hi(3); ++k){
        for(int j=lo(2); j<=hi(2)+1; ++j){
@@ -3632,39 +3454,81 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
        }
     }
 
+#endif //comment out
+
+
     // advance solution
     if (is_conserv) {
 
        // conservative update
-       for(int k = lo(3); k<=hi(3); ++k){
-          for(int j = lo(2); j<=hi(2); ++j){
-             for(int i = lo(1); i<=hi(1); ++i){
+       //for(int k = lo(3); k<=hi(3); ++k){
+       //   for(int j = lo(2); j<=hi(2); ++j){
+       //      for(int i = lo(1); i<=hi(1); ++i){
+
+
+        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
+
+            const Box& bx = mfi.tilebox();  //HACK -- adjustments here? 
+
+            Array4<const Real> const& s  = s_mf.array(mfi, comp);
+            Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
+
+            Array4<const Real> const& sedgex  = sedgex_mf.array(mfi);
+            Array4<const Real> const& sedgey  = sedgey_mf.array(mfi);
+            Array4<const Real> const& sedgez  = sedgez_mf.array(mfi);
+
+            Array4<const Real> const& uadv  = umac_mf[0].array(mfi, comp);
+            Array4<const Real> const& vadv  = umac_mf[1].array(mfi, comp);
+            Array4<const Real> const& wadv  = umac_mf[2].array(mfi, comp);
+
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
                 sn(i,j,k) = s(i,j,k) - dt*(
-                     (sedgex(i+1,j,k)*uadv(i+1,j,k)-sedgex(i,j,k)*uadv(i,j,k))/hx +
-                     (sedgey(i,j+1,k)*vadv(i,j+1,k)-sedgey(i,j,k)*vadv(i,j,k))/hy +
-                     (sedgez(i,j,k+1)*wadv(i,j,k+1)-sedgez(i,j,k)*wadv(i,j,k))/hz );
-             }
-          }
-       }
+                     (sedgex(i+1,j,  k  )*uadv(i+1,j  ,k  )-sedgex(i,j,k)*uadv(i,j,k))/hx +
+                     (sedgey(i  ,j+1,k  )*vadv(i  ,j+1,k  )-sedgey(i,j,k)*vadv(i,j,k))/hy +
+                     (sedgez(i  ,j  ,k+1)*wadv(i  ,j  ,k+1)-sedgez(i,j,k)*wadv(i,j,k))/hz );
+
+            });
+        }
 
     } else  {
 
        // non-conservative update
-       for(int k = lo(3); k<=hi(3); ++k){
-          for(int j = lo(2); j<=hi(2); ++j){
-             for(int i = lo(1); i<=hi(1); ++i){
-                uconv = 0.5 * (uadv(i+1,j,k)+uadv(i,j,k));
-                vconv = 0.5 * (vadv(i,j+1,k)+vadv(i,j,k));
-                wconv = 0.5 * (wadv(i,j,k+1)+wadv(i,j,k));
+       //for(int k = lo(3); k<=hi(3); ++k){
+       //   for(int j = lo(2); j<=hi(2); ++j){
+       //      for(int i = lo(1); i<=hi(1); ++i){
+
+        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
+
+            const Box& bx = mfi.tilebox();  //HACK -- adjustments here? 
+
+            Array4<const Real> const& s  = s_mf.array(mfi, comp);
+            Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
+
+            Array4<const Real> const& uadv  = umac_mf[0].array(mfi, comp);
+            Array4<const Real> const& vadv  = umac_mf[1].array(mfi, comp);
+            Array4<const Real> const& wadv  = umac_mf[2].array(mfi, comp);
+
+            Array4<const Real> const& sedgex  = sedgex_mf.array(mfi);
+            Array4<const Real> const& sedgey  = sedgey_mf.array(mfi);
+            Array4<const Real> const& sedgez  = sedgez_mf.array(mfi);
+
+
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+                Real uconv, vconv, wconv;
+
+                uconv = 0.5 * (uadv(i+1,j  ,k  )+uadv(i,j,k));
+                vconv = 0.5 * (vadv(i  ,j+1,k  )+vadv(i,j,k));
+                wconv = 0.5 * (wadv(i  ,j  ,k+1)+wadv(i,j,k));
 
                 sn(i,j,k) = s(i,j,k) - dt*(
-                     uconv * (sedgex(i+1,j,k) - sedgex(i,j,k)) / hx +
-                     vconv * (sedgey(i,j+1,k) - sedgey(i,j,k)) / hy +
-                     wconv * (sedgez(i,j,k+1) - sedgez(i,j,k)) / hz );
-             }
-          }
-       }
+                     uconv * (sedgex(i+1,j  ,k  ) - sedgex(i,j,k)) / hx +
+                     vconv * (sedgey(i  ,j+1,k  ) - sedgey(i,j,k)) / hy +
+                     wconv * (sedgez(i  ,j  ,k+1) - sedgez(i,j,k)) / hz );
 
+            });
+        }
     }
 
     //deallocate(sedgex,sedgey,sedgez);//HACK - wrong, just  trying to compile
@@ -3684,4 +3548,4 @@ Real eval (const Real s,
     return val;
 }
 
-#endif//end module bds_module
+//end module bds_module
