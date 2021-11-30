@@ -30,8 +30,8 @@ void bds (const MultiFab& s_mf,
 
     // this will hold slx, sly, and slxy
     int nslope = (AMREX_SPACEDIM == 2) ? 3 : 7;
-    MultiFab slope_mf(ba,dmap,nslope,1);  
-    
+    MultiFab slope_mf(ba,dmap,nslope,1);
+
     bdsslope(s_mf, geom, slope_mf, comp);
 
     bdsconc_3d(s_mf, geom, sn_mf, slope_mf, umac_mf, dt, comp, is_conserv);
@@ -160,8 +160,8 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
         }); 
 
     }
-
-    for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){ 
+    
+    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
 
         const Box& bx = mfi.growntilebox(1); 
 
@@ -174,7 +174,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
             // compute initial estimates of slopes from unlimited corner points
 
             // local variables
-            Real sumloc, redfac, redmax, div, kdp, sumdif, sgndif;         
+            Real sumloc, redfac, redmax, div, kdp, sumdif, sgndif;
 
 #if (AMREX_SPACEDIM ==2)
             // Added k index -- just placeholder for 2d
@@ -280,7 +280,6 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
    
 #elif (AMREX_SPACEDIM ==3)
 
-
             // Variables local to this loop
             Array1D<Real, 1, 8> diff;
             Array1D<Real, 1, 8> smin;
@@ -293,7 +292,6 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                                      +sint(i+1,j  ,k+1) + sint(i+1,j+1,k+1) )
                                    -( sint(i  ,j  ,k  ) + sint(i  ,j+1,k  )
                                      +sint(i  ,j  ,k+1) + sint(i  ,j+1,k+1) )) / hx;
-
              // sy
              slope(i,j,k,1) = 0.25*(( sint(i  ,j+1,k  ) + sint(i+1,j+1,k  )
                                      +sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) )
@@ -328,7 +326,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
              slope(i,j,k,6) =       (-sint(i  ,j  ,k  ) + sint(i+1,j  ,k  ) + sint(i  ,j+1,k  )
                                      +sint(i  ,j  ,k+1) - sint(i+1,j+1,k  ) - sint(i+1,j  ,k+1)
                                      -sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) ) / (hx*hy*hz);
-
+             
              if (limit_slopes) {
 
                  // +++ / sint(i+1,j+1,k+1)

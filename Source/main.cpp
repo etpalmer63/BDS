@@ -112,7 +112,7 @@ void main_main ()
     GpuArray<Real,AMREX_SPACEDIM> const dx = geom.CellSizeArray();
 
     // Nghost = number of ghost cells for each array
-    int Nghost = 1;
+    int Nghost = 3;
 
     // Ncomp = number of components for each array
     int Ncomp = 1;
