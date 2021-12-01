@@ -120,8 +120,7 @@ void main_main ()
     // How Boxes are distrubuted among MPI processes
     DistributionMapping dm(ba);
 
-    //
-    int is_conserv;
+    int is_conserv = 0; //default to non-conservative update
     //Array1D<const bool, 1, AMREX_SPACEDIM> is_conserv = {true, true, true};
     // we allocate two phi multifabs; one will store the old state, the other the new.
 

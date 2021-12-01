@@ -26,7 +26,7 @@ void bds (const MultiFab& s_mf,
 
     BoxArray ba = s_mf.boxArray();
     DistributionMapping dmap = s_mf.DistributionMap();
-    GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    //GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray(); //HACK -- so far unused
 
     // this will hold slx, sly, and slxy
     int nslope = (AMREX_SPACEDIM == 2) ? 3 : 7;
@@ -534,7 +534,6 @@ void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
     Real hx,hy,hxs,hys,gamp,gamm;
     Real vtrans,stem,vaddif,vdif;
     Real isign, jsign;
-    Real uconv,vconv,divu;
     Real u1,u2,v1,v2,uu,vv;
 
     int i,j,iup,jup;
@@ -884,8 +883,8 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
         Array4<      Real> const& vy    = vy_mf.array(mfi);
         Array4<      Real> const& wz    = wz_mf.array(mfi);
         Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
-        Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
-        Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
+        //Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
+        //Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
         
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
@@ -896,12 +895,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             Array1D<Real, 1, 3> p3;
             Array1D<Real, 1, 3> p4;
 
-            Array1D<Real, 1, 7> slope_roll;
+            Array1D<Real, 1, 7> slope_tmp;
 
             int ioff, joff, koff;
 
             Real isign,jsign,ksign;
-            Real uconv,vconv,wconv;
+            //Real uconv,vconv,wconv; //HACK --unused
             Real val1,val2,val3,val4,val5;
             Real u,v,w;
             Real uu,vv,ww;
@@ -920,7 +919,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j,k,n-1);
+                slope_tmp(n) = slope(i+ioff,j,k,n-1);
             }
 
 
@@ -929,7 +928,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             del(2) = 0.0;
             del(3) = 0.0;
             //sedgex(i,j,k) = eval(s(i+ioff,j,k),slope(i+ioff,j,k),del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
-            sedgex(i,j,k) = eval(s(i+ioff,j,k),slope_roll,del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
+            sedgex(i,j,k) = eval(s(i+ioff,j,k),slope_tmp,del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
 
             // source term
             sedgex(i,j,k) = sedgex(i,j,k) - dt2*sedgex(i,j,k)*ux(i+ioff,j,k);
@@ -947,7 +946,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
             }
 
             u = 0.0;
@@ -972,19 +971,19 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
             //val1 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); //call eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k,:),del,val1)
-            val1 = eval(s(i+ioff,j+joff,k),slope_roll,del); 
+            val1 = eval(s(i+ioff,j+joff,k),slope_tmp,del); 
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
             //val2 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); 
-            val2 = eval(s(i+ioff,j+joff,k),slope_roll,del); 
+            val2 = eval(s(i+ioff,j+joff,k),slope_tmp,del); 
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
             //val3 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
-            val3 = eval(s(i+ioff,j+joff,k),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -1005,7 +1004,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1038,27 +1037,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1084,7 +1083,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1116,27 +1115,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1169,7 +1168,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
             }
 
             u = 0.0;
@@ -1192,17 +1191,17 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j+joff,k),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            val3 = eval(s(i+ioff,j+joff,k),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -1223,7 +1222,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1255,27 +1254,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1301,7 +1300,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1333,27 +1332,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1386,7 +1385,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
             }
 
             u = 0.0;
@@ -1409,17 +1408,17 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            val3 = eval(s(i+ioff,j,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -1440,7 +1439,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
 
@@ -1473,27 +1472,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1519,7 +1518,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1551,27 +1550,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1604,7 +1603,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
             }
 
             u = 0.0;
@@ -1627,17 +1626,17 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            val3 = eval(s(i+ioff,j,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
             // average these centroid values to get the average value
             gamma = (val1+val2+val3)/3.0;
@@ -1658,7 +1657,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             uu = 0.0;
@@ -1690,27 +1689,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1735,6 +1734,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 0;
             }
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
             uu = 0.0;
             if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
                uu = uadv(i,j+joff,k+koff);
@@ -1743,10 +1746,6 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             ww = 0.0;
             if (wadv(i+ioff,j,k)*wadv(i+ioff,j+joff,k) > 0) {
                ww = wadv(i+ioff,j+joff,k);
-            }
-
-            for(int n=1; n<=7; ++n){
-                slope_roll(n) = slope(i+ioff,j+joff,k+koff,n-1);
             }
 
             p1(1) = isign*0.5*hx;
@@ -1768,27 +1767,27 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
             }
-            val2 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
             }
-            val3 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
             }
-            val4 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
             }
-            val5 = eval(s(i+ioff,j+joff,k+koff),slope_roll,del);
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -1811,857 +1810,949 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
         });
     } // compute sedgex on x-faces
             
-#if(0)
+
+
+    //for(int k=lo(3); k<=hi(3); ++k){
+    //   for(int j=lo(2); j<=hi(2)+1; ++j){
+    //      for(int i=lo(1); i<=hi(1); ++i){
+
     // compute sedgey on y-faces
-    for(int k=lo(3); k<=hi(3); ++k){
-       for(int j=lo(2); j<=hi(2)+1; ++j){
-          for(int i=lo(1); i<=hi(1); ++i){
-
-             ////////////////////////////////////////////////
-             // compute sedgey without transverse corrections
-             ////////////////////////////////////////////////
-
-             // centroid of rectangular volume
-             if (vadv(i,j,k) > 0) {
-                jsign = 1.0;
-                joff = -1;
-             } else {
-                jsign = -1.0;
-                joff = 0;
-             {
-
-             del(1) = 0.0;
-             del(2) = jsign*0.5*hy - 0.5*vadv(i,j,k)*dt;
-             del(3) = 0.0;
-             sedgey(i,j,k) = eval(s(i,j+joff,k),slope(i,j+joff,k),del);
-
-             // source term
-             sedgey(i,j,k) = sedgey(i,j,k) - dt2*sedgey(i,j,k)*vy(i,j+joff,k);
-
-             ////////////////////////////////////////////////
-             // compute \Gamma^{x+} without corner corrections
-             ////////////////////////////////////////////////
-
-             if (uadv(i+1,j+joff,k) > 0) {
-                isign = 1.0;
-                ioff = 0;
-             } else {
-                isign = -1.0;
-                ioff = 1;
-             }
-
-             v = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0) {
-                v = vadv(i+ioff,j,k);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = 0.0;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = 0.0;
-
-             p3(1) = isign*0.5*hx - uadv(i+1,j+joff,k)*dt;
-             p3(2) = jsign*0.5*hy - v*dt;
-             p3(3) = 0.0;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p2(ll)+p3(ll))/2.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p3(ll))/2.0;
-             }
-             val2 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll))/2.0;
-             }
-             val3 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
-
-             // average these centroid values to get the average value
-             gamma = (val1+val2+val3)/3.0;
-
-             // source term
-             gamma = gamma - dt3*(gamma*vy(i+ioff,j+joff,k) + gamma*ux(i+ioff,j+joff,k));
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{x+} with \Gamma^{x+,z+}
-             ////////////////////////////////////////////////
-
-             if (wadv(i+ioff,j+joff,k+1) > 0) {
-                ksign = 1.0;
-                koff = 0;
-             } else {
-                ksign = -1.0;
-                koff = 1;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             uu = 0.0;
-             if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0) {
-                uu = uadv(i+1,j+joff,k+koff);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx - uadv(i+1,j+joff,k)*dt;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz;
-
-             p4(1) = isign*0.5*hx - uu*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k+1)*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * wadv(i+ioff,j+joff,k+1);
-
-             gamma = gamma - dt*gamma2/(3.0*hz);
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{x+} with \Gamma^{x+,z-}
-             ////////////////////////////////////////////////
-
-             if (wadv(i+ioff,j+joff,k) > 0) {
-                ksign = 1.0;
-                koff = -1;
-             } else {
-                ksign = -1.0;
-                koff = 0;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             uu = 0.0;
-             if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0) {
-                uu = uadv(i+1,j+joff,k+koff)
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx - uadv(i+1,j+joff,k)*dt;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz;
-
-             p4(1) = isign*0.5*hx - uu*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k)*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll )
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * wadv(i+ioff,j+joff,k);
-
-             gamma = gamma + dt*gamma2/(3.0*hz);
-
-             ////////////////////////////////////////////////
-             // correct sedgey with \Gamma^{x+}
-             ////////////////////////////////////////////////
-
-             gamma = gamma * uadv(i+1,j+joff,k);
-             sedgey(i,j,k) = sedgey(i,j,k) - dt*gamma/(2.0*hx);
-
-             ////////////////////////////////////////////////
-             // compute \Gamma^{x-} without corner corrections
-             ////////////////////////////////////////////////
-
-             if (uadv(i,j+joff,k) > 0) {
-                isign = 1.0;
-                ioff = -1;
-             } else {
-                isign = -1.0;
-                ioff = 0;
-             }
-
-             v = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0) {
-                v = vadv(i+ioff,j,k);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = 0.0;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = 0.0;
-
-             p3(1) = isign*0.5*hx - uadv(i,j+joff,k)*dt;
-             p3(2) = jsign*0.5*hy - v*dt;
-             p3(3) = 0.0;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p2(ll)+p3(ll))/2.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p3(ll))/2.0;
-             }
-             val2 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll))/2.0;
-             }
-             val3 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
-
-             // average these centroid values to get the average value
-             gamma = (val1+val2+val3)/3.0;
-
-             // source term
-             gamma = gamma - dt3*(gamma*vy(i+ioff,j+joff,k) + gamma*ux(i+ioff,j+joff,k));
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{x-} with \Gamma^{x-,z+}
-             ////////////////////////////////////////////////
-
-             if (wadv(i+ioff,j+joff,k+1) > 0) {
-                ksign = 1.0;
-                koff = 0;
-             } else {
-                ksign = -1.0;
-                koff = 1;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             uu = 0.0;
-             if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0) {
-                uu = uadv(i,j+joff,k+koff);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx - uadv(i,j+joff,k)*dt;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz;
-
-             p4(1) = isign*0.5*hx - uu*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k+1)*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * wadv(i+ioff,j+joff,k+1);
-
-             gamma = gamma - dt*gamma2/(3.0*hz);
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{x-} with \Gamma^{x-,z-}
-             ////////////////////////////////////////////////
-
-             if (wadv(i+ioff,j+joff,k) > 0) {
-                ksign = 1.0;
-                koff = -1;
-             } else {
-                ksign = -1.0;
-                koff = 0;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             uu = 0.0;
-             if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0) {
-                uu = uadv(i,j+joff,k+koff);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx - uadv(i,j+joff,k)*dt;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz;
-
-             p4(1) = isign*0.5*hx - uu*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k)*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * wadv(i+ioff,j+joff,k);
-
-             gamma = gamma + dt*gamma2/(3.0*hz);
-
-             ////////////////////////////////////////////////
-             // correct sedgey with \Gamma^{x-}
-             ////////////////////////////////////////////////
-
-             gamma = gamma * uadv(i,j+joff,k);
-             sedgey(i,j,k) = sedgey(i,j,k) + dt*gamma/(2.0*hx);
-
-             ////////////////////////////////////////////////
-             // compute \Gamma^{z+} without corner corrections
-             ////////////////////////////////////////////////
-
-             if (wadv(i,j+joff,k+1) > 0) {
-                ksign = 1.0;
-                koff = 0;
-             } else {
-                ksign = -1.0;
-                koff = 1;
-             }
-
-             v = 0.0;
-             if (vadv(i,j,k)*vadv(i,j,k+koff) > 0) {
-                v = vadv(i,j,k+koff);
-             }
-
-             p1(1) = 0.0;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = 0.0;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = 0.0;
-             p3(2) = jsign*0.5*hy - v*dt;
-             p3(3) = ksign*0.5*hz - wadv(i,j+joff,k+1)*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p2(ll)+p3(ll))/2.0;
-             }
-             val1 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p3(ll))/2.0;
-             }
-             val2 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll))/2.0;
-             }
-             val3 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
-
-             // average these centroid values to get the average value
-             gamma = (val1+val2+val3)/3.0;
-
-             // source term
-             gamma = gamma - dt3*(gamma*vy(i,j+joff,k+koff) + gamma*wz(i,j+joff,k+koff));
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{z+} with \Gamma^{z+,x+}
-             ////////////////////////////////////////////////
-
-             if (uadv(i+1,j+joff,k+koff) > 0) {
-                isign = 1.0;
-                ioff = 0;
-             } else {
-                isign = -1.0;
-                ioff = 1;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             ww = 0.0;
-             if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
-                ww = wadv(i+ioff,j+joff,k+1);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz - wadv(i,j+joff,k+1)*dt;
-
-             p4(1) = isign*0.5*hx - uadv(i+1,j+joff,k+koff)*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - ww*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * uadv(i+1,j+joff,k+koff);
-
-             gamma = gamma - dt*gamma2/(3.0*hx);
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{z+} with \Gamma^{z+,x-}
-             ////////////////////////////////////////////////
-
-             if (uadv(i,j+joff,k+koff) > 0) {
-                isign = 1.0;
-                ioff = -1;
-             } else {
-                isign = -1.0;
-                ioff = 0;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             ww = 0.0;
-             if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
-                ww = wadv(i+ioff,j+joff,k+1);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz - wadv(i,j+joff,k+1)*dt;
-
-             p4(1) = isign*0.5*hx - uadv(i,j+joff,k+koff)*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - ww*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * uadv(i,j+joff,k+koff);
-
-             gamma = gamma + dt*gamma2/(3.0*hx);
-
-             ////////////////////////////////////////////////
-             // correct sedgey with \Gamma^{z+}
-             ////////////////////////////////////////////////
-
-             gamma = gamma * wadv(i,j+joff,k+1);
-             sedgey(i,j,k) = sedgey(i,j,k) - dt*gamma/(2.0*hz);
-
-             ////////////////////////////////////////////////
-             // compute \Gamma^{z-} without corner corrections
-             ////////////////////////////////////////////////
-
-             if (wadv(i,j+joff,k) > 0) {
-                ksign = 1.0;
-                koff = -1;
-             } else {
-                ksign = -1.0;
-                koff = 0;
-             }
-
-             v = 0.0;
-             if (vadv(i,j,k)*vadv(i,j,k+koff) > 0) {
-                v = vadv(i,j,k+koff);
-             }
-
-             p1(1) = 0.0;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = 0.0;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = 0.0;
-             p3(2) = jsign*0.5*hy - v*dt;
-             p3(3) = ksign*0.5*hz - wadv(i,j+joff,k)*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p2(ll)+p3(ll))/2.0;
-             }
-             val1 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p3(ll))/2.0;
-             }
-             val2 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll))/2.0;
-             }
-             val3 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
-
-             // average these centroid values to get the average value
-             gamma = (val1+val2+val3)/3.0;
-
-             // source term
-             gamma = gamma - dt3*(gamma*vy(i,j+joff,k+koff) + gamma*wz(i,j+joff,k+koff));
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{z-} with \Gamma^{z-,x+}
-             ////////////////////////////////////////////////
-
-             if (uadv(i+1,j+joff,k+koff) > 0) {
-                isign = 1.0;
-                ioff = 0;
-             } else {
-                isign = -1.0;
-                ioff = 1;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             ww = 0.0;
-             if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0) {
-                ww = wadv(i+ioff,j+joff,k);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz - wadv(i,j+joff,k)*dt;
-
-             p4(1) = isign*0.5*hx - uadv(i+1,j+joff,k+koff)*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - ww*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * uadv(i+1,j+joff,k+koff);
-
-             gamma = gamma - dt*gamma2/(3.0*hx);
-
-             ////////////////////////////////////////////////
-             // correct \Gamma^{z-} with \Gamma^{z-,x-}
-             ////////////////////////////////////////////////
-
-             if (uadv(i,j+joff,k+koff) > 0) {
-                isign = 1.0;
-                ioff = -1;
-             } else {
-                isign = -1.0;
-                ioff = 0;
-             }
-
-             vv = 0.0;
-             if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
-                vv = vadv(i+ioff,j,k+koff);
-             }
-
-             ww = 0.0;
-             if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0) {
-                ww = wadv(i+ioff,j+joff,k);
-             }
-
-             p1(1) = isign*0.5*hx;
-             p1(2) = jsign*0.5*hy;
-             p1(3) = ksign*0.5*hz;
-
-             p2(1) = isign*0.5*hx;
-             p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p2(3) = ksign*0.5*hz;
-
-             p3(1) = isign*0.5*hx;
-             p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
-             p3(3) = ksign*0.5*hz - wadv(i,j+joff,k)*dt;
-
-             p4(1) = isign*0.5*hx - uadv(i,j+joff,k+koff)*dt;
-             p4(2) = jsign*0.5*hy - vv*dt;
-             p4(3) = ksign*0.5*hz - ww*dt;
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
-             }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
-             }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
-             }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
-             }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             for(int ll=1; ll<=3; ++ll ){
-                del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
-             }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
-
-             gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
-
-             // source term
-             gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
-                                      +gamma2*vy(i+ioff,j+joff,k+koff)
-                                      +gamma2*wz(i+ioff,j+joff,k+koff));
-
-             gamma2 = gamma2 * uadv(i,j+joff,k+koff);
-
-             gamma = gamma + dt*gamma2/(3.0*hx);
-
-             ////////////////////////////////////////////////
-             // correct sedgey with \Gamma^{z-}
-             ////////////////////////////////////////////////
-
-             gamma = gamma * wadv(i,j+joff,k);
-             sedgey(i,j,k) = sedgey(i,j,k) + dt*gamma/(2.0*hz);
-
-             }
-          }
-       }
-
+    for ( MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){ 
+
+        const Box& bx = mfi.tilebox();
+
+        Array4<const Real> const& s      = s_mf.array(mfi, comp);
+        Array4<const Real> const& slope  = slope_mf.array(mfi);
+        Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+        Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+        Array4<const Real> const& wadv  = umac_mf[2].array(mfi);
+
+        //local variables
+        Array4<      Real> const& ux    = ux_mf.array(mfi);
+        Array4<      Real> const& vy    = vy_mf.array(mfi);
+        Array4<      Real> const& wz    = wz_mf.array(mfi);
+        //Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
+        Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
+        //Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
+        
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+            //local variables
+            Array1D<Real, 1, 3> del;
+            Array1D<Real, 1, 3> p1;
+            Array1D<Real, 1, 3> p2;
+            Array1D<Real, 1, 3> p3;
+            Array1D<Real, 1, 3> p4;
+
+            Array1D<Real, 1, 7> slope_tmp;
+
+            int ioff, joff, koff;
+
+            Real isign,jsign,ksign;
+            //Real uconv,vconv,wconv; //HACK --unused
+            Real val1,val2,val3,val4,val5;
+            Real u,v,w;
+            Real uu,vv,ww;
+            Real gamma,gamma2;
+            
+            ////////////////////////////////////////////////
+            // compute sedgey without transverse corrections
+            ////////////////////////////////////////////////
+
+            // centroid of rectangular volume
+            if (vadv(i,j,k) > 0) {
+               jsign = 1.0;
+               joff = -1;
+            } else {
+               jsign = -1.0;
+               joff = 0;
+            }
+
+            del(1) = 0.0;
+            del(2) = jsign*0.5*hy - 0.5*vadv(i,j,k)*dt;
+            del(3) = 0.0;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i,j+joff,k,n-1);
+            }
+
+            sedgey(i,j,k) = eval(s(i,j+joff,k),slope_tmp,del);
+
+            // source term
+            sedgey(i,j,k) = sedgey(i,j,k) - dt2*sedgey(i,j,k)*vy(i,j+joff,k);
+
+            ////////////////////////////////////////////////
+            // compute \Gamma^{x+} without corner corrections
+            ////////////////////////////////////////////////
+
+            if (uadv(i+1,j+joff,k) > 0) {
+               isign = 1.0;
+               ioff = 0;
+            } else {
+               isign = -1.0;
+               ioff = 1;
+            }
+
+            v = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0) {
+               v = vadv(i+ioff,j,k);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = 0.0;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = 0.0;
+
+            p3(1) = isign*0.5*hx - uadv(i+1,j+joff,k)*dt;
+            p3(2) = jsign*0.5*hy - v*dt;
+            p3(3) = 0.0;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p2(ll)+p3(ll))/2.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p3(ll))/2.0;
+            }
+            val2 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll))/2.0;
+            }
+            val3 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
+
+            // average these centroid values to get the average value
+            gamma = (val1+val2+val3)/3.0;
+
+            // source term
+            gamma = gamma - dt3*(gamma*vy(i+ioff,j+joff,k) + gamma*ux(i+ioff,j+joff,k));
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{x+} with \Gamma^{x+,z+}
+            ////////////////////////////////////////////////
+
+            if (wadv(i+ioff,j+joff,k+1) > 0) {
+               ksign = 1.0;
+               koff = 0;
+            } else {
+               ksign = -1.0;
+               koff = 1;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            uu = 0.0;
+            if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0) {
+               uu = uadv(i+1,j+joff,k+koff);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx - uadv(i+1,j+joff,k)*dt;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz;
+
+            p4(1) = isign*0.5*hx - uu*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k+1)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * wadv(i+ioff,j+joff,k+1);
+
+            gamma = gamma - dt*gamma2/(3.0*hz);
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{x+} with \Gamma^{x+,z-}
+            ////////////////////////////////////////////////
+
+            if (wadv(i+ioff,j+joff,k) > 0) {
+               ksign = 1.0;
+               koff = -1;
+            } else {
+               ksign = -1.0;
+               koff = 0;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            uu = 0.0;
+            if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0) {
+               uu = uadv(i+1,j+joff,k+koff);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx - uadv(i+1,j+joff,k)*dt;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz;
+
+            p4(1) = isign*0.5*hx - uu*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * wadv(i+ioff,j+joff,k);
+
+            gamma = gamma + dt*gamma2/(3.0*hz);
+
+            ////////////////////////////////////////////////
+            // correct sedgey with \Gamma^{x+}
+            ////////////////////////////////////////////////
+
+            gamma = gamma * uadv(i+1,j+joff,k);
+            sedgey(i,j,k) = sedgey(i,j,k) - dt*gamma/(2.0*hx);
+
+            ////////////////////////////////////////////////
+            // compute \Gamma^{x-} without corner corrections
+            ////////////////////////////////////////////////
+
+            if (uadv(i,j+joff,k) > 0) {
+               isign = 1.0;
+               ioff = -1;
+            } else {
+               isign = -1.0;
+               ioff = 0;
+            }
+
+            v = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0) {
+               v = vadv(i+ioff,j,k);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = 0.0;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = 0.0;
+
+            p3(1) = isign*0.5*hx - uadv(i,j+joff,k)*dt;
+            p3(2) = jsign*0.5*hy - v*dt;
+            p3(3) = 0.0;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p2(ll)+p3(ll))/2.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p3(ll))/2.0;
+            }
+            val2 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll))/2.0;
+            }
+            val3 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
+
+            // average these centroid values to get the average value
+            gamma = (val1+val2+val3)/3.0;
+
+            // source term
+            gamma = gamma - dt3*(gamma*vy(i+ioff,j+joff,k) + gamma*ux(i+ioff,j+joff,k));
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{x-} with \Gamma^{x-,z+}
+            ////////////////////////////////////////////////
+
+            if (wadv(i+ioff,j+joff,k+1) > 0) {
+               ksign = 1.0;
+               koff = 0;
+            } else {
+               ksign = -1.0;
+               koff = 1;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            uu = 0.0;
+            if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0) {
+               uu = uadv(i,j+joff,k+koff);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx - uadv(i,j+joff,k)*dt;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz;
+
+            p4(1) = isign*0.5*hx - uu*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k+1)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * wadv(i+ioff,j+joff,k+1);
+
+            gamma = gamma - dt*gamma2/(3.0*hz);
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{x-} with \Gamma^{x-,z-}
+            ////////////////////////////////////////////////
+
+            if (wadv(i+ioff,j+joff,k) > 0) {
+               ksign = 1.0;
+               koff = -1;
+            } else {
+               ksign = -1.0;
+               koff = 0;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            uu = 0.0;
+            if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0) {
+               uu = uadv(i,j+joff,k+koff);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx - uadv(i,j+joff,k)*dt;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz;
+
+            p4(1) = isign*0.5*hx - uu*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * wadv(i+ioff,j+joff,k);
+
+            gamma = gamma + dt*gamma2/(3.0*hz);
+
+            ////////////////////////////////////////////////
+            // correct sedgey with \Gamma^{x-}
+            ////////////////////////////////////////////////
+
+            gamma = gamma * uadv(i,j+joff,k);
+            sedgey(i,j,k) = sedgey(i,j,k) + dt*gamma/(2.0*hx);
+
+            ////////////////////////////////////////////////
+            // compute \Gamma^{z+} without corner corrections
+            ////////////////////////////////////////////////
+
+            if (wadv(i,j+joff,k+1) > 0) {
+               ksign = 1.0;
+               koff = 0;
+            } else {
+               ksign = -1.0;
+               koff = 1;
+            }
+
+            v = 0.0;
+            if (vadv(i,j,k)*vadv(i,j,k+koff) > 0) {
+               v = vadv(i,j,k+koff);
+            }
+
+            p1(1) = 0.0;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = 0.0;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = 0.0;
+            p3(2) = jsign*0.5*hy - v*dt;
+            p3(3) = ksign*0.5*hz - wadv(i,j+joff,k+1)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p2(ll)+p3(ll))/2.0;
+            }
+            val1 = eval(s(i,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p3(ll))/2.0;
+            }
+            val2 = eval(s(i,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll))/2.0;
+            }
+            val3 = eval(s(i,j+joff,k+koff),slope_tmp,del);
+
+            // average these centroid values to get the average value
+            gamma = (val1+val2+val3)/3.0;
+
+            // source term
+            gamma = gamma - dt3*(gamma*vy(i,j+joff,k+koff) + gamma*wz(i,j+joff,k+koff));
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{z+} with \Gamma^{z+,x+}
+            ////////////////////////////////////////////////
+
+            if (uadv(i+1,j+joff,k+koff) > 0) {
+               isign = 1.0;
+               ioff = 0;
+            } else {
+               isign = -1.0;
+               ioff = 1;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            ww = 0.0;
+            if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
+               ww = wadv(i+ioff,j+joff,k+1);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz - wadv(i,j+joff,k+1)*dt;
+
+            p4(1) = isign*0.5*hx - uadv(i+1,j+joff,k+koff)*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * uadv(i+1,j+joff,k+koff);
+
+            gamma = gamma - dt*gamma2/(3.0*hx);
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{z+} with \Gamma^{z+,x-}
+            ////////////////////////////////////////////////
+
+            if (uadv(i,j+joff,k+koff) > 0) {
+               isign = 1.0;
+               ioff = -1;
+            } else {
+               isign = -1.0;
+               ioff = 0;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            ww = 0.0;
+            if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
+               ww = wadv(i+ioff,j+joff,k+1);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz - wadv(i,j+joff,k+1)*dt;
+
+            p4(1) = isign*0.5*hx - uadv(i,j+joff,k+koff)*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * uadv(i,j+joff,k+koff);
+
+            gamma = gamma + dt*gamma2/(3.0*hx);
+
+            ////////////////////////////////////////////////
+            // correct sedgey with \Gamma^{z+}
+            ////////////////////////////////////////////////
+
+            gamma = gamma * wadv(i,j+joff,k+1);
+            sedgey(i,j,k) = sedgey(i,j,k) - dt*gamma/(2.0*hz);
+
+            ////////////////////////////////////////////////
+            // compute \Gamma^{z-} without corner corrections
+            ////////////////////////////////////////////////
+
+            if (wadv(i,j+joff,k) > 0) {
+               ksign = 1.0;
+               koff = -1;
+            } else {
+               ksign = -1.0;
+               koff = 0;
+            }
+
+            v = 0.0;
+            if (vadv(i,j,k)*vadv(i,j,k+koff) > 0) {
+               v = vadv(i,j,k+koff);
+            }
+
+            p1(1) = 0.0;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = 0.0;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = 0.0;
+            p3(2) = jsign*0.5*hy - v*dt;
+            p3(3) = ksign*0.5*hz - wadv(i,j+joff,k)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p2(ll)+p3(ll))/2.0;
+            }
+            val1 = eval(s(i,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p3(ll))/2.0;
+            }
+            val2 = eval(s(i,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll))/2.0;
+            }
+            val3 = eval(s(i,j+joff,k+koff),slope_tmp,del);
+
+            // average these centroid values to get the average value
+            gamma = (val1+val2+val3)/3.0;
+
+            // source term
+            gamma = gamma - dt3*(gamma*vy(i,j+joff,k+koff) + gamma*wz(i,j+joff,k+koff));
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{z-} with \Gamma^{z-,x+}
+            ////////////////////////////////////////////////
+
+            if (uadv(i+1,j+joff,k+koff) > 0) {
+               isign = 1.0;
+               ioff = 0;
+            } else {
+               isign = -1.0;
+               ioff = 1;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            ww = 0.0;
+            if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0) {
+               ww = wadv(i+ioff,j+joff,k);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz - wadv(i,j+joff,k)*dt;
+
+            p4(1) = isign*0.5*hx - uadv(i+1,j+joff,k+koff)*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * uadv(i+1,j+joff,k+koff);
+
+            gamma = gamma - dt*gamma2/(3.0*hx);
+
+            ////////////////////////////////////////////////
+            // correct \Gamma^{z-} with \Gamma^{z-,x-}
+            ////////////////////////////////////////////////
+
+            if (uadv(i,j+joff,k+koff) > 0) {
+               isign = 1.0;
+               ioff = -1;
+            } else {
+               isign = -1.0;
+               ioff = 0;
+            }
+
+            vv = 0.0;
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+               vv = vadv(i+ioff,j,k+koff);
+            }
+
+            ww = 0.0;
+            if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0) {
+               ww = wadv(i+ioff,j+joff,k);
+            }
+
+            p1(1) = isign*0.5*hx;
+            p1(2) = jsign*0.5*hy;
+            p1(3) = ksign*0.5*hz;
+
+            p2(1) = isign*0.5*hx;
+            p2(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p2(3) = ksign*0.5*hz;
+
+            p3(1) = isign*0.5*hx;
+            p3(2) = jsign*0.5*hy - vadv(i,j,k)*dt;
+            p3(3) = ksign*0.5*hz - wadv(i,j+joff,k)*dt;
+
+            p4(1) = isign*0.5*hx - uadv(i,j+joff,k+koff)*dt;
+            p4(2) = jsign*0.5*hy - vv*dt;
+            p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
+            }
+            val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
+            }
+            val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
+            }
+            val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
+            }
+            val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            for(int ll=1; ll<=3; ++ll ){
+               del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
+            }
+            val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
+
+            gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
+
+            // source term
+            gamma2 = gamma2 - dt4 * ( gamma2*ux(i+ioff,j+joff,k+koff)
+                                     +gamma2*vy(i+ioff,j+joff,k+koff)
+                                     +gamma2*wz(i+ioff,j+joff,k+koff));
+
+            gamma2 = gamma2 * uadv(i,j+joff,k+koff);
+
+            gamma = gamma + dt*gamma2/(3.0*hx);
+
+            ////////////////////////////////////////////////
+            // correct sedgey with \Gamma^{z-}
+            ////////////////////////////////////////////////
+
+            gamma = gamma * wadv(i,j+joff,k);
+            sedgey(i,j,k) = sedgey(i,j,k) + dt*gamma/(2.0*hz);
+
+        });
+    }
+
+#if(0)
     // compute sedgez on z-faces
     for(int k=lo(3); k<=hi(3)+1; ++k){
        for(int j=lo(2); j<=hi(2); ++j){
@@ -2716,6 +2807,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(1) = isign*0.5*hx - uadv(i+1,j,k+koff)*dt;
              p3(2) = 0.0;
              p3(3) = ksign*0.5*hz - w*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
+            }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
@@ -2775,6 +2870,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(1) = isign*0.5*hx - uu*dt;
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -2850,6 +2949,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
@@ -2922,6 +3025,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(2) = 0.0;
              p3(3) = ksign*0.5*hz - w*dt;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
+            }
+
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
              }
@@ -2980,6 +3087,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(1) = isign*0.5*hx - uu*dt;
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -3055,6 +3166,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
@@ -3127,6 +3242,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(2) = jsign*0.5*hy - vadv(i,j+1,k+koff)*dt;
              p3(3) = ksign*0.5*hz - w*dt;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
+            }
+
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
              }
@@ -3185,6 +3304,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(1) = isign*0.5*hx - uadv(i+1,j+joff,k+koff)*dt;
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -3260,6 +3383,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
+
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
@@ -3332,6 +3459,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(2) = jsign*0.5*hy - vadv(i,j,k+koff)*dt;
              p3(3) = ksign*0.5*hz - w*dt;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
+            }
+
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
              }
@@ -3390,6 +3521,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(1) = isign*0.5*hx - uadv(i+1,j+joff,k+koff)*dt;
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -3464,6 +3599,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(1) = isign*0.5*hx - uadv(i,j+joff,k+koff)*dt;
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
