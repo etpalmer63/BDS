@@ -37,6 +37,9 @@ void main_main ()
     // time step
     Real dt;
 
+    int is_conserv = 0; //default to non-conservative update
+    //Array1D<const bool, 1, AMREX_SPACEDIM> is_conserv = {true, true, true};
+
     // inputs parameters
     {
         // ParmParse is way of reading inputs from the inputs file
@@ -64,7 +67,7 @@ void main_main ()
         // time step
         pp.get("dt",dt);
 
-
+        pp.get("is_conserv", is_conserv);
 
         // Inputs, S old, S new, U mac, dx, dt, is_conservative
 
@@ -120,8 +123,6 @@ void main_main ()
     // How Boxes are distrubuted among MPI processes
     DistributionMapping dm(ba);
 
-    int is_conserv = 0; //default to non-conservative update
-    //Array1D<const bool, 1, AMREX_SPACEDIM> is_conserv = {true, true, true};
     // we allocate two phi multifabs; one will store the old state, the other the new.
 
     //initialize data on the multifab

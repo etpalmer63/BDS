@@ -545,7 +545,6 @@ void bdsconc_2d ( const MultiFab& s_mf,
     //for(int j = lo(2); j<=hi(2); ++j){
     //   for(int i = lo(1)-1; i<=hi(1); ++i){
 
-    
     // calculate Gamma plus for flux F
     for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
 
@@ -561,11 +560,16 @@ void bdsconc_2d ( const MultiFab& s_mf,
         
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
+            i--; //HACK -- adjust indices -- ask about this
+            j--;
+
             //local variables
             
-            Real hxs,hys,gamp,gamm;
+            Real hxs,hys;
+            Real gamp,gamm;
             Real vtrans,stem,vaddif,vdif;
-            Real u1,u2,v1,v2,uu,vv;
+            Real u1,u2;
+            Real vv;
 
             int iup,jup;
             Real isign, jsign;
@@ -601,10 +605,10 @@ void bdsconc_2d ( const MultiFab& s_mf,
             hys = hy*jsign;
 
             gamp = s(iup,jup,k)+
-                 (hxs*.5 - (u1+u2)*dt/3.0)*slope(iup,jup,1) +
-                 (hys*.5 -    vv*dt/3.0)*slope(iup,jup,2) +
+                 (hxs*.5 - (u1+u2)*dt/3.0)*slope(iup,jup,k,0) +
+                 (hys*.5 -    vv*dt/3.0)  *slope(iup,jup,k,1) +
                  (3.*hxs*hys-2.*(u1+u2)*dt*hys-2.*vv*hxs*dt+
-                 vv*(2.*u2+u1)*dt*dt)*slope(iup,jup,3)/12.0;
+                 vv*(2.*u2+u1)*dt*dt)     *slope(iup,jup,k,2)/12.0;
 
             // end of calculation of Gamma plus for flux F
             // ****************************************
@@ -641,10 +645,10 @@ void bdsconc_2d ( const MultiFab& s_mf,
             hys = hy*jsign;
 
             gamm = s(iup,jup,k)+
-                 (hxs*0.5 - (u1+u2)*dt/3.0)*slope(iup,jup,k,1) +
-                 (hys*0.5 -      vv*dt/3.0)*slope(iup,jup,k,2) +
+                 (hxs*0.5 - (u1+u2)*dt/3.0)*slope(iup,jup,k,0) +
+                 (hys*0.5 -      vv*dt/3.0)*slope(iup,jup,k,1) +
                  (3.0*hxs*hys-2.0*(u1+u2)*dt*hys-2.0*vv*hxs*dt +
-                      vv*(2.0*u2+u1)*dt*dt)*slope(iup,jup,k,3)/12.0;
+                      vv*(2.0*u2+u1)*dt*dt)*slope(iup,jup,k,2)/12.0;
 
             // end of calculation of Gamma minus for flux F
             // ****************************************
@@ -662,7 +666,7 @@ void bdsconc_2d ( const MultiFab& s_mf,
 
             vdif = 0.5*dt*(vadv(iup,j+1,k)*gamp -
                  vadv(iup,j,k)*gamm ) / hy;
-            stem = s(iup,j,k) + (isign*hx - uadv(i+1,j,k)*dt)*0.5*slope(iup,j,k,1);
+            stem = s(iup,j,k) + (isign*hx - uadv(i+1,j,k)*dt)*0.5*slope(iup,j,k,0);
             vaddif = stem*0.5*dt*(
                     uadv(iup+1,j,k)-uadv(iup,j,k))/hx;
             divu = (uadv(iup+1,j,k)-uadv(iup,j,k))/hx +
@@ -674,115 +678,144 @@ void bdsconc_2d ( const MultiFab& s_mf,
         });
     } // end of calculation of siphj}
 
-#if (0)
-    for(int j = lo(2)-1; j<=hi(2); ++j){
-       for(int i = lo(1); i<=hi(1); ++i){
+//
+    //for(int j = lo(2)-1; j<=hi(2); ++j){
+    //   for(int i = lo(1); i<=hi(1); ++i){
 
-          // **********************************
-          // calculate Gamma plus for flux G
+    // calculate Gamma plus for flux G
+    for ( MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){ 
 
-          if (vadv(i,j+1) > 0.0) {
-             jup   = j;
-             jsign = 1.0;
-          } else {
-             jup   = j+1;
-             jsign = -1.0;
-          }
+        const Box& bx = mfi.tilebox();
 
-          vtrans = uadv(i+1,jup);
-          v1 = vadv(i,j+1);
-          if (vtrans > 0.0) {
-             iup   = i;
-             isign = 1.0;
-             v2 = vadv(i,j+1);
-          } else {
-             iup   = i+1;
-             isign = -1.0;
-             v2 = 0.0;
-             if (vadv(i,j+1)*vadv(i+1,j+1) > 0) {
-                v2 = vadv(i+1,j+1);
-             }
-          }
+        Array4<const Real> const& s      = s_mf.array(mfi, comp);
+        Array4<const Real> const& slope  = slope_mf.array(mfi);
+        Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+        Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
 
-          uu = uadv(i+1,jup);
+        //local variables
+        Array4<      Real> const& sijph = sijph_mf.array(mfi);
+        
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
-          hxs = hx*isign;
-          hys = hy*jsign;
+            i--; //HACK -- adjust indices -- ask about this
+            j--;
+            
+            //local variables
+            Real hxs,hys;
+            Real gamp,gamm;
+            Real vtrans,stem,vaddif,vdif;
+            Real v1,v2;
+            Real uu;
 
-          gamp = s(iup,jup)+
-               (hys*.5 - (v1+v2)*dt/3.)*slope(iup,jup,2) +
-               (hxs*.5 - uu*dt/3.)*slope(iup,jup,1) +
-               (3.*hxs*hys-2.*(v1+v2)*dt*hxs-2.*uu*hys*dt+
-               (2.*v2+v1)*uu*dt*dt)*slope(iup,jup,3)/12.0;
+            int iup,jup;
+            Real isign, jsign;
+            Real divu;
 
-          // end of calculation of Gamma plus for flux G
-          // ****************************************
+            if (vadv(i,j+1,k) > 0.0) {
+               jup   = j;
+               jsign = 1.0;
+            } else {
+               jup   = j+1;
+               jsign = -1.0;
+            }
+            
 
-          // *****************************************
-          // calculate Gamma minus for flux G
 
-          if (vadv(i,j+1) > 0.0) {
-             jup   = j;
-             jsign = 1.0;
-          } else {
-             jup   = j+1;
-             jsign = -1.0;
-          }
+            vtrans = uadv(i+1,jup,k);
+            v1 = vadv(i,j+1,k);
+            if (vtrans > 0.0) {
+               iup   = i;
+               isign = 1.0;
+               v2 = vadv(i,j+1,k);
+            } else {
+               iup   = i+1;
+               isign = -1.0;
+               v2 = 0.0;
+               if (vadv(i,j+1,k)*vadv(i+1,j+1,k) > 0.0) {
+                  v2 = vadv(i+1,j+1,k);
+               }
+            }
 
-          vtrans = uadv(i,jup);
-          v1 = vadv(i,j+1);
-          if (vtrans > 0.0) {
-             iup   = i-1;
-             isign = 1.0;
-             v2 = 0.0;
-             if (vadv(i,j+1)*vadv(i-1,j+1) > 0) {
-                v2 = vadv(i-1,j+1);
-             }
-          } else {
-             iup   = i;
-             isign = -1.0;
-             v2 = vadv(i,j+1);
-          }
+            uu = uadv(i+1,jup,k);
 
-          uu = uadv(i,jup);
+            hxs = hx*isign;
+            hys = hy*jsign;
 
-          hxs = hx*isign;
-          hys = hy*jsign;
+            gamp = s(iup,jup,k)+
+                 (hys*0.5 - (v1+v2)*dt/3.0)*slope(iup,jup,k,1) +
+                 (hxs*0.5 - uu*dt/3.0)     *slope(iup,jup,k,0) +
+                 (3.0*hxs*hys-2.0*(v1+v2)*dt*hxs-2.*uu*hys*dt+
+                 (2.0*v2+v1)*uu*dt*dt)     *slope(iup,jup,k,2)/12.0;
 
-          gamm = s(iup,jup) +
-               (hys*.5 - (v1+v2)*dt/3.)*slope(iup,jup,2) +
-               (hxs*.5 - uu*dt/3.)*slope(iup,jup,1) +
-               (3.*hxs*hys-2.*(v1+v2)*dt*hxs-2.*uu*hys*dt+
-               (2.*v2+v1)*uu*dt*dt)*slope(iup,jup,3)/12.0;
+            // end of calculation of Gamma plus for flux G
+            // ****************************************
 
-          // end of calculation of Gamma minus for flux G
-          // ****************************************
+            // *****************************************
+            // calculate Gamma minus for flux G
 
-          // *********************************
-          // calculate sijph
+            if (vadv(i,j+1,k) > 0.0) {
+               jup   = j;
+               jsign = 1.0;
+            } else {
+               jup   = j+1;
+               jsign = -1.0;
+            }
 
-          if (vadv(i,j+1) > 0) {
-             jup   = j;
-             jsign = 1.0;
-          } else {
-             jup   = j+1;
-             jsign = -1.0;
-          }
+            vtrans = uadv(i,jup,k);
+            v1 = vadv(i,j+1,k);
+            if (vtrans > 0.0) {
+               iup   = i-1;
+               isign = 1.0;
+               v2 = 0.0;
+               if (vadv(i,j+1,k)*vadv(i-1,j+1,k) > 0) {
+                  v2 = vadv(i-1,j+1,k);
+               }
+            } else {
+               iup   = i;
+               isign = -1.0;
+               v2 = vadv(i,j+1,k);
+            }
 
-          vdif = 0.5*dt*
-               (uadv(i+1,jup)*gamp-uadv(i,jup)*gamm)/hx;
-          stem = s(i,jup) + (jsign*hy - vadv(i,j+1)*dt)*0.5*slope(i,jup,2);
-          vaddif = stem*0.5*dt*(vadv(i,jup+1) - vadv(i,jup))/hy;
-          divu =  (uadv(i+1,jup)-uadv(i,jup))/hx +
-               (vadv(i,jup+1)-vadv(i,jup))/hy;
-          sijph(i,j+1) = stem - vdif - vaddif + 0.5*dt*stem*divu;
+            uu = uadv(i,jup,k);
 
-          // end of calculation of sijph
-          // *************************************
+            hxs = hx*isign;
+            hys = hy*jsign;
 
-       }
+            gamm = s(iup,jup,k) +
+                 (hys*.5 - (v1+v2)*dt/3.)*slope(iup,jup,k,1) +
+                 (hxs*.5 - uu*dt/3.)     *slope(iup,jup,k,0) +
+                 (3.*hxs*hys-2.*(v1+v2)*dt*hxs-2.*uu*hys*dt+
+                 (2.*v2+v1)*uu*dt*dt)    *slope(iup,jup,k,2)/12.0;
+
+            // end of calculation of Gamma minus for flux G
+            // ****************************************
+
+            // *********************************
+            // calculate sijph
+
+            if (vadv(i,j+1,k) > 0) {
+               jup   = j;
+               jsign = 1.0;
+            } else {
+               jup   = j+1;
+               jsign = -1.0;
+            }
+
+            vdif = 0.5*dt*
+                 (uadv(i+1,jup,k)*gamp-uadv(i,jup,k)*gamm)/hx;
+            stem = s(i,jup,k) + (jsign*hy - vadv(i,j+1,k)*dt)*0.5*slope(i,jup,k,1);
+            vaddif = stem*0.5*dt*(vadv(i,jup+1,k) - vadv(i,jup,k))/hy;
+            divu =  (uadv(i+1,jup,k)-uadv(i,jup,k))/hx +
+                 (vadv(i,jup+1,k)-vadv(i,jup,k))/hy;
+            sijph(i,j+1,k) = stem - vdif - vaddif + 0.5*dt*stem*divu;
+
+            // end of calculation of sijph
+            // *************************************
+
+        });
     }
 
+#if (0)
     // advance solution
     if (is_conserv) {
 
@@ -790,8 +823,8 @@ void bdsconc_2d ( const MultiFab& s_mf,
        for(int j = lo(2); j<=hi(2); ++j){
           for(int i = lo(1); i<=hi(1); ++i){
              sn(i,j) = s(i,j) - dt*(
-                  (siphj(i+1,j)*uadv(i+1,j)-siphj(i,j)*uadv(i,j))/hx +
-                  (sijph(i,j+1)*vadv(i,j+1)-sijph(i,j)*vadv(i,j))/hy);
+                  (siphj(i+1,j,k)*uadv(i+1,j,k)-siphj(i,j,k)*uadv(i,j,k))/hx +
+                  (sijph(i,j+1,k)*vadv(i,j+1,k)-sijph(i,j,k)*vadv(i,j,k))/hy);
           }
        }
 
@@ -800,12 +833,12 @@ void bdsconc_2d ( const MultiFab& s_mf,
        // non-conservative update
        for(int j = lo(2); j<=hi(2); ++j){
           for(int i = lo(1); i<=hi(1); ++i){
-             uconv = 0.5 * (uadv(i+1,j)+uadv(i,j));
-             vconv = 0.5 * (vadv(i,j+1)+vadv(i,j));
+             uconv = 0.5 * (uadv(i+1,j,k)+uadv(i,j,k));
+             vconv = 0.5 * (vadv(i,j+1,k)+vadv(i,j,k));
 
              sn(i,j) = s(i,j) - dt*(
-                  uconv * (siphj(i+1,j) - siphj(i,j)) / hx +
-                  vconv * (sijph(i,j+1) - sijph(i,j)) / hy );
+                  uconv * (siphj(i+1,j,k) - siphj(i,j,k)) / hx +
+                  vconv * (sijph(i,j+1,k) - sijph(i,j,k)) / hy );
           }
        }
 
