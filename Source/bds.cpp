@@ -902,7 +902,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             Real isign,jsign,ksign;
             //Real uconv,vconv,wconv; //HACK --unused
             Real val1,val2,val3,val4,val5;
-            Real u,v,w;
+            Real u; //HACK -- unused ,v,w;
             Real uu,vv,ww;
             Real gamma,gamma2;
             
@@ -1851,7 +1851,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             Real isign,jsign,ksign;
             //Real uconv,vconv,wconv; //HACK --unused
             Real val1,val2,val3,val4,val5;
-            Real u,v,w;
+            Real v;
             Real uu,vv,ww;
             Real gamma,gamma2;
             
@@ -2750,13 +2750,50 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             sedgey(i,j,k) = sedgey(i,j,k) + dt*gamma/(2.0*hz);
 
         });
-    }
+    } //compute sedgey
 
-#if(0)
     // compute sedgez on z-faces
-    for(int k=lo(3); k<=hi(3)+1; ++k){
-       for(int j=lo(2); j<=hi(2); ++j){
-          for(int i=lo(1); i<=hi(1); ++i){
+    //for(int k=lo(3); k<=hi(3)+1; ++k){
+    //   for(int j=lo(2); j<=hi(2); ++j){
+    //      for(int i=lo(1); i<=hi(1); ++i){
+
+    for ( MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){ 
+
+        const Box& bx = mfi.tilebox();
+
+        Array4<const Real> const& s      = s_mf.array(mfi, comp);
+        Array4<const Real> const& slope  = slope_mf.array(mfi);
+        Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+        Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+        Array4<const Real> const& wadv  = umac_mf[2].array(mfi);
+
+        //local variables
+        Array4<      Real> const& ux    = ux_mf.array(mfi);
+        Array4<      Real> const& vy    = vy_mf.array(mfi);
+        Array4<      Real> const& wz    = wz_mf.array(mfi);
+        //Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
+        //Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
+        Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
+        
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+            //local variables
+            Array1D<Real, 1, 3> del;
+            Array1D<Real, 1, 3> p1;
+            Array1D<Real, 1, 3> p2;
+            Array1D<Real, 1, 3> p3;
+            Array1D<Real, 1, 3> p4;
+
+            Array1D<Real, 1, 7> slope_tmp;
+
+            int ioff, joff, koff;
+
+            Real isign,jsign,ksign;
+            //Real uconv,vconv,wconv; //HACK --unused
+            Real val1,val2,val3,val4,val5;
+            Real w;
+            Real uu,vv,ww;
+            Real gamma,gamma2;
 
              ////////////////////////////////////////////////
              // compute sedgez without transverse corrections
@@ -2771,10 +2808,14 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                 koff = 0;
              }
 
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i,j,k+koff,n-1);
+             }
+
              del(1) = 0.0;
              del(2) = 0.0;
              del(3) = ksign*0.5*hz - 0.5*wadv(i,j,k)*dt;
-             sedgez(i,j,k) = eval(s(i,j,k+koff),slope(i,j,k+koff),del);
+             sedgez(i,j,k) = eval(s(i,j,k+koff),slope_tmp,del);
 
              // source term
              sedgez(i,j,k) = sedgez(i,j,k) - dt2*sedgez(i,j,k)*wz(i,j,k+koff);
@@ -2808,24 +2849,24 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(2) = 0.0;
              p3(3) = ksign*0.5*hz - w*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
              }
-             val1 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+             val1 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p3(ll))/2.0;
              }
-             val2 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+             val2 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll))/2.0;
              }
-             val3 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+             val3 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
              // average these centroid values to get the average value
              gamma = (val1+val2+val3)/3.0;
@@ -2871,34 +2912,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -2949,34 +2990,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3025,24 +3066,24 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(2) = 0.0;
              p3(3) = ksign*0.5*hz - w*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
              }
-             val1 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+             val1 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p3(ll))/2.0;
              }
-             val2 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+             val2 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll))/2.0;
              }
-             val3 = eval(s(i+ioff,j,k+koff),slope(i+ioff,j,k+koff),del);
+             val3 = eval(s(i+ioff,j,k+koff),slope_tmp,del);
 
              // average these centroid values to get the average value
              gamma = (val1+val2+val3)/3.0;
@@ -3088,34 +3129,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3166,34 +3207,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vadv(i+ioff,j,k+koff)*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3242,24 +3283,24 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(2) = jsign*0.5*hy - vadv(i,j+1,k+koff)*dt;
              p3(3) = ksign*0.5*hz - w*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
              }
-             val1 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
+             val1 = eval(s(i,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p3(ll))/2.0;
              }
-             val2 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
+             val2 = eval(s(i,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll))/2.0;
              }
-             val3 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
+             val3 = eval(s(i,j+joff,k+koff),slope_tmp,del);
 
              // average these centroid values to get the average value
              gamma = (val1+val2+val3)/3.0;
@@ -3305,34 +3346,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3383,34 +3424,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff:),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3459,24 +3500,24 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p3(2) = jsign*0.5*hy - vadv(i,j,k+koff)*dt;
              p3(3) = ksign*0.5*hz - w*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p2(ll)+p3(ll))/2.0;
              }
-             val1 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
+             val1 = eval(s(i,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p3(ll))/2.0;
              }
-             val2 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
+             val2 = eval(s(i,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll))/2.0;
              }
-             val3 = eval(s(i,j+joff,k+koff),slope(i,j+joff,k+koff),del);
+             val3 = eval(s(i,j+joff,k+koff),slope_tmp,del);
 
              // average these centroid values to get the average value
              gamma = (val1+val2+val3)/3.0;
@@ -3522,34 +3563,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3600,34 +3641,34 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              p4(2) = jsign*0.5*hy - vv*dt;
              p4(3) = ksign*0.5*hz - ww*dt;
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
+             for(int n=1; n<=7; ++n){
+                 slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+             }
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
              }
-             val1 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val1 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p1(ll) + sixth*(p2(ll)+p3(ll)+p4(ll));
              }
-             val2 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val2 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p2(ll) + sixth*(p1(ll)+p3(ll)+p4(ll));
              }
-             val3 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val3 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p3(ll) + sixth*(p2(ll)+p1(ll)+p4(ll));
              }
-             val4 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val4 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              for(int ll=1; ll<=3; ++ll ){
                 del(ll) = half*p4(ll) + sixth*(p2(ll)+p3(ll)+p1(ll));
              }
-             val5 = eval(s(i+ioff,j+joff,k+koff),slope(i+ioff,j+joff,k+koff),del);
+             val5 = eval(s(i+ioff,j+joff,k+koff),slope_tmp,del);
 
              gamma2 = -0.8*val1 + 0.45*(val2+val3+val4+val5);
 
@@ -3647,11 +3688,11 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              gamma = gamma * vadv(i,j,k+koff);
              sedgez(i,j,k) = sedgez(i,j,k) + dt*gamma/(2.0*hy);
 
-          }
-       }
-    }
+          });
+       
+    } //compute sedgez
 
-#endif //comment out
+
 
 
     // advance solution
@@ -3697,7 +3738,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
 
         for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
 
-            const Box& bx = mfi.tilebox();  //HACK -- adjustments here? 
+            const Box& bx = mfi.tilebox();
 
             Array4<const Real> const& s  = s_mf.array(mfi, comp);
             Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
@@ -3728,15 +3769,11 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
         }
     }
 
-    //deallocate(sedgex,sedgey,sedgez);//HACK - wrong, just  trying to compile
-    //deallocate(ux,vy,wz);//HACK - wrong, just  trying to compile
-
 }  //end subroutine bdsconc_3d
 
 Real eval (const Real s,
            Array1D<Real,1,7>& slope, 
            Array1D<Real,1,3>& del ){
-    //real(kind=dp_t), intent(  out) :: val
 
     Real val = s + del(1)*slope(1)        + del(2)*slope(2)        + del(3)*slope(3)
                  + del(1)*del(2)*slope(4) + del(1)*del(3)*slope(5) + del(2)*del(3)*slope(6)
@@ -3744,5 +3781,3 @@ Real eval (const Real s,
 
     return val;
 }
-
-//end module bds_module
