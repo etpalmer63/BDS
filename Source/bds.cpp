@@ -34,8 +34,11 @@ void bds (const MultiFab& s_mf,
 
     bdsslope(s_mf, geom, slope_mf, comp);
 
+#if (AMREX_SPACEDIM == 2)
+    bdsconc_2d(s_mf, geom, sn_mf, slope_mf, umac_mf, dt, comp, is_conserv);
+#elif (AMREX_SPACEDIM == 3)
     bdsconc_3d(s_mf, geom, sn_mf, slope_mf, umac_mf, dt, comp, is_conserv);
-
+#endif
 /*    for(int n=1;n<=nlevs;++n){
        for( int i = 1;i<s(n)%nboxes; ++i){
           if ( multifab_remote(s(n), i) ) {  continue; }
@@ -108,25 +111,20 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
     Real c4 = (1.0  /1728.0);
 #endif
 
-    //HACK -- remember to print out indices to ensure loops and box and hitting the right places.
-    // as sanity check
-    //for(int k = lo[2]-1; k<=hi[2]+2; ++k){ 
-    //for(int j = lo[1]-1; j<=hi[1]+2; ++j){
-    //for(int i = lo[0]-1; i<=hi[0]+2; ++i){ Print() << "i= " << i << "j= " << j << "k= " << k; }}} Print() << std::endl;
 
     for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){ 
 
         const Box& bx = mfi.growntilebox(1); 
 
         Array4<const Real> const& s    = s_mf.array(mfi, comp);
-        Array4<      Real> const& sint = sint_mf.array(mfi);     //HACK -- how to make this i,j accessible? -- add k!?
+        Array4<      Real> const& sint = sint_mf.array(mfi);    
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
         
 #if (AMREX_SPACEDIM ==2)                        
             // bicubic interpolation to corner points
             // (i,j,k) refers to lower corner of cell
-            // Added k index -- just placeholder for 2d
+            // Added k index -- placeholder for 2d
             sint(i,j,k) = (s(i-2,j-2,k) + s(i-2,j+1,k) + s(i+1,j-2,k) + s(i+1,j+1,k)
                     - 7.0*(s(i-2,j-1,k) + s(i-2,j  ,k) + s(i-1,j-2,k) + s(i  ,j-2,k) +
                            s(i-1,j+1,k) + s(i  ,j+1,k) + s(i+1,j-1,k) + s(i+1,j  ,k))
@@ -177,8 +175,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
             Real sumloc, redfac, redmax, div, kdp, sumdif, sgndif;
 
 #if (AMREX_SPACEDIM ==2)
-            // Added k index -- just placeholder for 2d
-
+            // Added k index -- placeholder for 2d
             Array1D<Real, 1, 4> diff;
             Array1D<Real, 1, 4> smin;
             Array1D<Real, 1, 4> smax;
@@ -267,7 +264,6 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                 } // end iterative loop
 
                 // final slopes
-
                 // sx
                 slope(i,j,k,0) = 0.5*( sc(4) + sc(3) -sc(1) - sc(2) )/hx;
                 // sy
@@ -515,152 +511,177 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
     } //MFIter
 } //subroutine bdsslope
 
-#if (0)
-void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
+void bdsconc_2d ( const MultiFab& s_mf,           
+                  const Geometry& geom,
+                  MultiFab& sn_mf,
+                  const MultiFab& slope_mf,
+                  const std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
+                  const Real dt,
+                  int comp,
+                  int is_conserv){
 
-    Array1D<const int > const& lo,    Array1D<const int> const& hi, 
-    Array2D<const Real> const& s,           
-    Array2D<      Real> const& sn,    const int ng_s,          
-    Array3D<const Real> const& slope, const int ng_c,       
-    Array2D<const Real> const& uadv,        
-    Array2D<const Real> const& vadv,  const int ng_u,       
-    Array1D<const int > const& dx,    const Real dt,
-    const bool is_conserv){
+    BoxArray ba = s_mf.boxArray();
+    DistributionMapping dmap = s_mf.DistributionMap();
+    GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables
-    Array2D<Real, 1, 2, 1, 2> siphj; //HACK - wrong, just trying to compile
-    Array2D<Real, 1, 2, 1, 2> sijph; //HACK - wrong, just trying to compile
+    int Nghost = 1;
 
-    Real hx,hy,hxs,hys,gamp,gamm;
-    Real vtrans,stem,vaddif,vdif;
-    Real isign, jsign;
-    Real u1,u2,v1,v2,uu,vv;
+    MultiFab siphj_mf(ba, dmap, 1, Nghost);
+    MultiFab sijph_mf(ba, dmap, 1, Nghost);
 
-    int i,j,iup,jup;
+    Real hx = dx[0];
+    Real hy = dx[1];
+
+
+
+
 
     //allocate(siphj(lo(1):hi(1)+1,lo(2):hi(2)  ))
     //allocate(sijph(lo(1):hi(1)  ,lo(2):hi(2)+1))
 
-    hx = dx(1);
-    hy = dx(2);
-
-    for(int j = lo(2); j<=hi(2); ++j){
-       for(int i = lo(1)-1; i<=hi(1); ++i){
-
-          // *******************************
-          // calculate Gamma plus for flux F
-
-          if (uadv(i+1,j) > 0) {
-             iup   = i;
-             isign = 1.0;
-          } else {
-             iup   = i+1;
-             isign = -1.0;
-          }
-
-          vtrans = vadv(iup,j+1);
-          u1 = uadv(i+1,j);
-          if (vtrans > 0) {
-             jup   = j;
-             jsign = 1.0;
-             u2 = uadv(i+1,j);
-          } else {
-             jup   = j+1;
-             jsign = -1.0;
-             u2 = 0.
-             if (uadv(i+1,j)*uadv(i+1,j+1) > 0) {
-                u2 = uadv(i+1,j+1);
-             }
-          }
-
-          vv = vadv(iup,j+1);
-
-          hxs = hx*isign;
-          hys = hy*jsign;
-
-          gamp = s(iup,jup)+
-               (hxs*.5 - (u1+u2)*dt/3.0)*slope(iup,jup,1) +
-               (hys*.5 -    vv*dt/3.0)*slope(iup,jup,2) +
-               (3.*hxs*hys-2.*(u1+u2)*dt*hys-2.*vv*hxs*dt+
-               vv*(2.*u2+u1)*dt*dt)*slope(iup,jup,3)/12.0;
-
-          // end of calculation of Gamma plus for flux F
-          // ****************************************
-
-          // *****************************************
-          // calculate Gamma minus for flux F
-
-          if (uadv(i+1,j) > 0) {
-             iup   = i;
-             isign = 1.0;
-          } else {
-             iup   = i+1;
-             isign = -1.0;
-          }
-
-          vtrans = vadv(iup,j);
-          u1 = uadv(i+1,j);
-          if (vtrans > 0) {
-             jup   = j-1;
-             jsign = 1.0;
-             u2 = 0.0;
-             if (uadv(i+1,j)*uadv(i+1,j-1) > 0) {
-                u2 = uadv(i+1,j-1);
-             }
-          } else {
-             jup   = j;
-             jsign = -1.0;
-             u2 = uadv(i+1,j);
-          }
-
-          vv = vadv(iup,j);
-
-          hxs = hx*isign;
-          hys = hy*jsign;
-
-          gamm = s(iup,jup)+
-               (hxs*.5 - (u1+u2)*dt/3.0)*slope(iup,jup,1) +
-               (hys*.5 -    vv*dt/3.0)*slope(iup,jup,2) +
-               (3.*hxs*hys-2.*(u1+u2)*dt*hys-2.*vv*hxs*dt+
-               vv*(2.*u2+u1)*dt*dt)*slope(iup,jup,3)/12.0;
-
-          // end of calculation of Gamma minus for flux F
-          // ****************************************
-
-          // *********************************
-          // calculate siphj
-
-          if (uadv(i+1,j) > 0) {
-             iup   = i;
-             isign = 1.0;
-          } else {
-             iup   = i+1;
-             isign = -1.0;
-          }
-
-          vdif = 0.5*dt*(vadv(iup,j+1)*gamp -
-               vadv(iup,j)*gamm ) / hy;
-          stem = s(iup,j) + (isign*hx - uadv(i+1,j)*dt)*0.5*slope(iup,j,1);
-          vaddif = stem*0.5*dt*(
-               uadv(iup+1,j) - uadv(iup,j))/hx;
-          divu = (uadv(iup+1,j)-uadv(iup,j))/hx +
-                 (vadv(iup,j+1)-vadv(iup,j))/hy;
-          siphj(i+1,j) = stem - vdif - vaddif + 0.5*dt*stem*divu;
-
-          // end of calculation of siphj
-          // *************************************
-
-       }
-    }
 
 
+    //for(int j = lo(2); j<=hi(2); ++j){
+    //   for(int i = lo(1)-1; i<=hi(1); ++i){
+
+    
+    // calculate Gamma plus for flux F
+    for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
+
+        const Box& bx = mfi.tilebox();
+
+        Array4<const Real> const& s      = s_mf.array(mfi, comp);
+        Array4<const Real> const& slope  = slope_mf.array(mfi);
+        Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+        Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+
+        //local variables
+        Array4<      Real> const& siphj = siphj_mf.array(mfi);
+        
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+            //local variables
+            
+            Real hxs,hys,gamp,gamm;
+            Real vtrans,stem,vaddif,vdif;
+            Real u1,u2,v1,v2,uu,vv;
+
+            int iup,jup;
+            Real isign, jsign;
+            Real divu;
+
+
+            if (uadv(i+1,j,k) > 0.0) {
+               iup   = i;
+               isign = 1.0;
+            } else {
+               iup   = i+1;
+               isign = -1.0;
+            }
+
+            vtrans = vadv(iup,j+1,k);
+            u1 = uadv(i+1,j,k);
+            if (vtrans > 0.0) {
+               jup   = j;
+               jsign = 1.0;
+               u2 = uadv(i+1,j,k);
+            } else {
+               jup   = j+1;
+               jsign = -1.0;
+               u2 = 0.0;
+               if (uadv(i+1,j,k)*uadv(i+1,j+1,k) > 0.0) {
+                  u2 = uadv(i+1,j+1,k);
+               }
+            }
+
+            vv = vadv(iup,j+1,k);
+
+            hxs = hx*isign;
+            hys = hy*jsign;
+
+            gamp = s(iup,jup,k)+
+                 (hxs*.5 - (u1+u2)*dt/3.0)*slope(iup,jup,1) +
+                 (hys*.5 -    vv*dt/3.0)*slope(iup,jup,2) +
+                 (3.*hxs*hys-2.*(u1+u2)*dt*hys-2.*vv*hxs*dt+
+                 vv*(2.*u2+u1)*dt*dt)*slope(iup,jup,3)/12.0;
+
+            // end of calculation of Gamma plus for flux F
+            // ****************************************
+
+            // *****************************************
+            // calculate Gamma minus for flux F
+
+            if (uadv(i+1,j,k) > 0.0) {
+               iup   = i;
+               isign = 1.0;
+            } else {
+               iup   = i+1;
+               isign = -1.0;
+            }
+
+            vtrans = vadv(iup,j,k);
+            u1 = uadv(i+1,j,k);
+            if (vtrans > 0.0) {
+               jup   = j-1;
+               jsign = 1.0;
+               u2 = 0.0;
+               if (uadv(i+1,j,k)*uadv(i+1,j-1,k) > 0.0) {
+                  u2 = uadv(i+1,j-1,k);
+               }
+            } else {
+               jup   = j;
+               jsign = -1.0;
+               u2 = uadv(i+1,j,k);
+            }
+
+            vv = vadv(iup,j,k);
+
+            hxs = hx*isign;
+            hys = hy*jsign;
+
+            gamm = s(iup,jup,k)+
+                 (hxs*0.5 - (u1+u2)*dt/3.0)*slope(iup,jup,k,1) +
+                 (hys*0.5 -      vv*dt/3.0)*slope(iup,jup,k,2) +
+                 (3.0*hxs*hys-2.0*(u1+u2)*dt*hys-2.0*vv*hxs*dt +
+                      vv*(2.0*u2+u1)*dt*dt)*slope(iup,jup,k,3)/12.0;
+
+            // end of calculation of Gamma minus for flux F
+            // ****************************************
+
+            // *********************************
+            // calculate siphj
+
+            if (uadv(i+1,j,k) > 0.0) {
+               iup   = i;
+               isign = 1.0;
+            } else {
+               iup   = i+1;
+               isign = -1.0;
+            }
+
+            vdif = 0.5*dt*(vadv(iup,j+1,k)*gamp -
+                 vadv(iup,j,k)*gamm ) / hy;
+            stem = s(iup,j,k) + (isign*hx - uadv(i+1,j,k)*dt)*0.5*slope(iup,j,k,1);
+            vaddif = stem*0.5*dt*(
+                    uadv(iup+1,j,k)-uadv(iup,j,k))/hx;
+            divu = (uadv(iup+1,j,k)-uadv(iup,j,k))/hx +
+                   (vadv(iup,j+1,k)-vadv(iup,j,k))/hy;
+            siphj(i+1,j,k) = stem - vdif - vaddif + 0.5*dt*stem*divu;
+
+            
+
+        });
+    } // end of calculation of siphj}
+
+#if (0)
     for(int j = lo(2)-1; j<=hi(2); ++j){
        for(int i = lo(1); i<=hi(1); ++i){
 
           // **********************************
           // calculate Gamma plus for flux G
 
-          if (vadv(i,j+1) > 0) {
+          if (vadv(i,j+1) > 0.0) {
              jup   = j;
              jsign = 1.0;
           } else {
@@ -700,7 +721,7 @@ void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
           // *****************************************
           // calculate Gamma minus for flux G
 
-          if (vadv(i,j+1) > 0) {
+          if (vadv(i,j+1) > 0.0) {
              jup   = j;
              jsign = 1.0;
           } else {
@@ -792,31 +813,27 @@ void bdsconc_2d(// lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,ng_u,dx,dt,is_conserv)
 
     // deallocate(siphj,sijph); //HACK - wrong, just trying to compile
 
-} // end subroutine bdsconc_2d
 #endif
+} // end subroutine bdsconc_2d
 
 
-void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conserv)
-
-    const MultiFab& s_mf,           
-    const Geometry& geom,
-    MultiFab& sn_mf,
-    const MultiFab& slope_mf,
-    const std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
-    const Real dt,
-    int comp,
-    int is_conserv){
+void bdsconc_3d (const MultiFab& s_mf,           
+                 const Geometry& geom,
+                 MultiFab& sn_mf,
+                 const MultiFab& slope_mf,
+                 const std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
+                 const Real dt,
+                 int comp,
+                 int is_conserv){
 
     BoxArray ba = s_mf.boxArray();
     DistributionMapping dmap = s_mf.DistributionMap();
     GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables
-    //int i,j,k,ll;
-
     int Nghost = 1;
 
-    MultiFab sedgex_mf(ba, dmap, 1, Nghost); //Nghost=1?
+    MultiFab sedgex_mf(ba, dmap, 1, Nghost); 
     MultiFab sedgey_mf(ba, dmap, 1, Nghost);
     MultiFab sedgez_mf(ba, dmap, 1, Nghost);
 
@@ -836,11 +853,6 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
     constexpr Real sixth = 1.0/6.0;
 
     // compute cell-centered ux, vy, and wz
-    //for(int k=lo(3)-1; k<=hi(3)+1; ++k){
-    //   for(int j=lo(2)-1; j<=hi(2)+1; ++j){
-    //      for(int i=lo(1)-1; i<=hi(1)+1; ++i){
-
-    
     for ( MFIter mfi(ux_mf); mfi.isValid(); ++mfi){ 
 
         const Box& bx = mfi.growntilebox(1);
@@ -863,11 +875,6 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
     }
 
     // compute sedgex on x-faces
-    //for(int k=lo(3); k<=hi(3); ++k){
-    //   for(int j=lo(2); j<=hi(2); ++j){
-    //      for(int i=lo(1); i<=hi(1)+1; ++i){ //HACK -- grow one in x-direction?
-
-    // compute sedgex
     for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
 
         const Box& bx = mfi.tilebox();
@@ -883,8 +890,6 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
         Array4<      Real> const& vy    = vy_mf.array(mfi);
         Array4<      Real> const& wz    = wz_mf.array(mfi);
         Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
-        //Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
-        //Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
         
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
@@ -900,9 +905,8 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             int ioff, joff, koff;
 
             Real isign,jsign,ksign;
-            //Real uconv,vconv,wconv; //HACK --unused
             Real val1,val2,val3,val4,val5;
-            Real u; //HACK -- unused ,v,w;
+            Real u; 
             Real uu,vv,ww;
             Real gamma,gamma2;
             
@@ -910,7 +914,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute sedgex without transverse corrections
             ////////////////////////////////////////////////
 
-            if (uadv(i,j,k) > 0) {
+            if (uadv(i,j,k) > 0.0) {
                isign = 1.0;
                ioff = -1;
             } else {
@@ -927,8 +931,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             del(1) = isign*0.5*hx - 0.5*uadv(i,j,k)*dt;
             del(2) = 0.0;
             del(3) = 0.0;
-            //sedgex(i,j,k) = eval(s(i+ioff,j,k),slope(i+ioff,j,k),del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
-            sedgex(i,j,k) = eval(s(i+ioff,j,k),slope_tmp,del); //call eval(s(i+ioff,j,k),slope(i+ioff,j,k,:),del,sedgex(i,j,k))
+            sedgex(i,j,k) = eval(s(i+ioff,j,k),slope_tmp,del);
 
             // source term
             sedgex(i,j,k) = sedgex(i,j,k) - dt2*sedgex(i,j,k)*ux(i+ioff,j,k);
@@ -937,7 +940,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{y+} without corner corrections
             ////////////////////////////////////////////////
 
-            if (vadv(i+ioff,j+1,k) > 0) {
+            if (vadv(i+ioff,j+1,k) > 0.0) {
                jsign = 1.0;
                joff = 0;
             } else {
@@ -945,12 +948,9 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 1;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
-            }
 
             u = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k) > 0.0) {
                u = uadv(i,j+joff,k);
             }
 
@@ -966,23 +966,23 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p3(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k)*dt;
             p3(3) = 0.0;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            //val1 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); //call eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k,:),del,val1)
             val1 = eval(s(i+ioff,j+joff,k),slope_tmp,del); 
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            //val2 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del); 
             val2 = eval(s(i+ioff,j+joff,k),slope_tmp,del); 
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
             }
-            //val3 = eval(s(i+ioff,j+joff,k),slope(i+ioff,j+joff,k),del);
             val3 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
 
             // average these centroid values to get the average value
@@ -995,7 +995,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{y+} with \Gamma^{y+,z+}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i+ioff,j+joff,k+1) > 0.0) {
                ksign = 1.0;
                koff = 0;
             } else {
@@ -1003,17 +1003,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 1;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             vv = 0.0;
-            if (vadv(i+ioff,j+1,k)*vadv(i+ioff,j+1,k+koff) > 0) {
+            if (vadv(i+ioff,j+1,k)*vadv(i+ioff,j+1,k+koff) > 0.0) {
                vv = vadv(i+ioff,j+1,k+koff);
             }
 
@@ -1033,6 +1029,9 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(2) = jsign*0.5*hy - vv*dt;
             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k+1)*dt;
 
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1074,7 +1073,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{y+} with \Gamma^{y+,z-}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i+ioff,j+joff,k) > 0.0) {
                ksign = 1.0;
                koff = -1;
             } else {
@@ -1082,17 +1081,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 0;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             vv = 0.0;
-            if (vadv(i+ioff,j+1,k)*vadv(i+ioff,j+1,k+koff) > 0) {
+            if (vadv(i+ioff,j+1,k)*vadv(i+ioff,j+1,k+koff) > 0.0) {
                vv = vadv(i+ioff,j+1,k+koff);
             }
 
@@ -1111,6 +1106,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(1) = isign*0.5*hx - uu*dt;
             p4(2) = jsign*0.5*hy - vv*dt;
             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1159,7 +1158,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{y-} without corner corrections
             ////////////////////////////////////////////////
 
-            if (vadv(i+ioff,j,k) > 0) {
+            if (vadv(i+ioff,j,k) > 0.0) {
                jsign = 1.0;
                joff = -1;
             } else {
@@ -1167,12 +1166,8 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 0;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
-            }
-
             u = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k) > 0.0) {
                u = uadv(i,j+joff,k);
             }
 
@@ -1187,6 +1182,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p3(1) = isign*0.5*hx - u*dt;
             p3(2) = jsign*0.5*hy - vadv(i+ioff,j,k)*dt;
             p3(3) = 0.0;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
@@ -1213,7 +1212,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{y-} with \Gamma^{y-,z+}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i+ioff,j+joff,k+1) > 0.0) {
                ksign = 1.0;
                koff = 0;
             } else {
@@ -1221,17 +1220,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 1;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             vv = 0.0;
-            if (vadv(i+ioff,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i+ioff,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
@@ -1250,6 +1245,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(1) = isign*0.5*hx - uu*dt;
             p4(2) = jsign*0.5*hy - vv*dt;
             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k+1)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1291,7 +1290,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{y-} with \Gamma^{y-,z-}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i+ioff,j+joff,k) > 0.0) {
                ksign = 1.0;
                koff = -1;
             } else {
@@ -1299,17 +1298,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 0;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             vv = 0.0;
-            if (vadv(i+ioff,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i+ioff,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
@@ -1328,6 +1323,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(1) = isign*0.5*hx - uu*dt;
             p4(2) = jsign*0.5*hy - vv*dt;
             p4(3) = ksign*0.5*hz - wadv(i+ioff,j+joff,k)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1376,7 +1375,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{z+} without corner corrections
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j,k+1) > 0) {
+            if (wadv(i+ioff,j,k+1) > 0.0) {
                ksign = 1.0;
                koff = 0;
             } else {
@@ -1384,12 +1383,8 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 1;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
-            }
-
             u = 0.0;
-            if (uadv(i,j,k)*uadv(i,j,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j,k+koff) > 0.0) {
                u = uadv(i,j,k+koff);
             }
 
@@ -1404,6 +1399,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p3(1) = isign*0.5*hx - u*dt;
             p3(2) = 0.0;
             p3(3) = ksign*0.5*hz - wadv(i+ioff,j,k+1)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
@@ -1430,7 +1429,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z+} with \Gamma^{z+,y+}
             ////////////////////////////////////////////////
 
-            if (vadv(i+ioff,j+1,k+koff) > 0) {
+            if (vadv(i+ioff,j+1,k+koff) > 0.0) {
                jsign = 1.0;
                joff = 0;
             } else {
@@ -1438,18 +1437,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 1;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i+ioff,j,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i+ioff,j,k+1)*wadv(i+ioff,j+joff,k+1) > 0.0) {
                ww = wadv(i+ioff,j+joff,k+1);
             }
 
@@ -1468,6 +1462,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(1) = isign*0.5*hx - uu*dt;
             p4(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k+koff)*dt;
             p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1509,7 +1507,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z+} with \Gamma^{z+,y-}
             ////////////////////////////////////////////////
 
-            if (vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i+ioff,j,k+koff) > 0.0) {
                jsign = 1.0;
                joff = -1;
             } else {
@@ -1517,17 +1515,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 0;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i+ioff,j,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i+ioff,j,k+1)*wadv(i+ioff,j+joff,k+1) > 0.0) {
                ww = wadv(i+ioff,j+joff,k+1);
             }
 
@@ -1546,6 +1540,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(1) = isign*0.5*hx - uu*dt;
             p4(2) = jsign*0.5*hy - vadv(i+ioff,j,k+koff)*dt;
             p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1594,7 +1592,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{z-} without corner corrections
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j,k) > 0) {
+            if (wadv(i+ioff,j,k) > 0.0) {
                ksign = 1.0;
                koff = -1;
             } else {
@@ -1602,12 +1600,8 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                koff = 0;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
-            }
-
             u = 0.0;
-            if (uadv(i,j,k)*uadv(i,j,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j,k+koff) > 0.0) {
                u = uadv(i,j,k+koff);
             }
 
@@ -1622,6 +1616,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p3(1) = isign*0.5*hx - u*dt;
             p3(2) = 0.0;
             p3(3) = ksign*0.5*hz - wadv(i+ioff,j,k)*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
@@ -1648,7 +1646,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z-} with \Gamma^{z-,y+}
             ////////////////////////////////////////////////
 
-            if (vadv(i+ioff,j+1,k+koff) > 0) {
+            if (vadv(i+ioff,j+1,k+koff) > 0.0) {
                jsign = 1.0;
                joff = 0;
             } else {
@@ -1656,17 +1654,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 1;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i+ioff,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i+ioff,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                ww = wadv(i+ioff,j+joff,k);
             }
 
@@ -1685,6 +1679,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(1) = isign*0.5*hx - uu*dt;
             p4(2) = jsign*0.5*hy - vadv(i+ioff,j+1,k+koff)*dt;
             p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1726,7 +1724,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z-} with \Gamma^{z-,y-}
             ////////////////////////////////////////////////
 
-            if (vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i+ioff,j,k+koff) > 0.0) {
                jsign = 1.0;
                joff = -1;
             } else {
@@ -1734,17 +1732,13 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
                joff = 0;
             }
 
-            for(int n=1; n<=7; ++n){
-                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
-            }
-
             uu = 0.0;
-            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i+ioff,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i+ioff,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                ww = wadv(i+ioff,j+joff,k);
             }
 
@@ -1763,6 +1757,10 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             p4(1) = isign*0.5*hx - uu*dt;
             p4(2) = jsign*0.5*hy - vadv(i+ioff,j,k+koff)*dt;
             p4(3) = ksign*0.5*hz - ww*dt;
+
+            for(int n=1; n<=7; ++n){
+                slope_tmp(n) = slope(i+ioff,j+joff,k+koff,n-1);
+            }
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll)+p3(ll)+p4(ll))/4.0;
@@ -1812,10 +1810,6 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             
 
 
-    //for(int k=lo(3); k<=hi(3); ++k){
-    //   for(int j=lo(2); j<=hi(2)+1; ++j){
-    //      for(int i=lo(1); i<=hi(1); ++i){
-
     // compute sedgey on y-faces
     for ( MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){ 
 
@@ -1831,9 +1825,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
         Array4<      Real> const& ux    = ux_mf.array(mfi);
         Array4<      Real> const& vy    = vy_mf.array(mfi);
         Array4<      Real> const& wz    = wz_mf.array(mfi);
-        //Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
         Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
-        //Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
         
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
@@ -1849,7 +1841,6 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             int ioff, joff, koff;
 
             Real isign,jsign,ksign;
-            //Real uconv,vconv,wconv; //HACK --unused
             Real val1,val2,val3,val4,val5;
             Real v;
             Real uu,vv,ww;
@@ -1860,7 +1851,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             ////////////////////////////////////////////////
 
             // centroid of rectangular volume
-            if (vadv(i,j,k) > 0) {
+            if (vadv(i,j,k) > 0.0) {
                jsign = 1.0;
                joff = -1;
             } else {
@@ -1885,7 +1876,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{x+} without corner corrections
             ////////////////////////////////////////////////
 
-            if (uadv(i+1,j+joff,k) > 0) {
+            if (uadv(i+1,j+joff,k) > 0.0) {
                isign = 1.0;
                ioff = 0;
             } else {
@@ -1894,7 +1885,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             v = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0.0) {
                v = vadv(i+ioff,j,k);
             }
 
@@ -1939,7 +1930,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{x+} with \Gamma^{x+,z+}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i+ioff,j+joff,k+1) > 0.0) {
                ksign = 1.0;
                koff = 0;
             } else {
@@ -1948,12 +1939,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             uu = 0.0;
-            if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0) {
+            if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0.0) {
                uu = uadv(i+1,j+joff,k+koff);
             }
 
@@ -2017,7 +2008,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{x+} with \Gamma^{x+,z-}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i+ioff,j+joff,k) > 0.0) {
                ksign = 1.0;
                koff = -1;
             } else {
@@ -2026,12 +2017,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             uu = 0.0;
-            if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0) {
+            if (uadv(i+1,j+joff,k)*uadv(i+1,j+joff,k+koff) > 0.0) {
                uu = uadv(i+1,j+joff,k+koff);
             }
 
@@ -2102,7 +2093,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{x-} without corner corrections
             ////////////////////////////////////////////////
 
-            if (uadv(i,j+joff,k) > 0) {
+            if (uadv(i,j+joff,k) > 0.0) {
                isign = 1.0;
                ioff = -1;
             } else {
@@ -2111,7 +2102,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             v = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k) > 0.0) {
                v = vadv(i+ioff,j,k);
             }
 
@@ -2156,7 +2147,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{x-} with \Gamma^{x-,z+}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i+ioff,j+joff,k+1) > 0.0) {
                ksign = 1.0;
                koff = 0;
             } else {
@@ -2165,12 +2156,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             uu = 0.0;
-            if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
@@ -2234,7 +2225,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{x-} with \Gamma^{x-,z-}
             ////////////////////////////////////////////////
 
-            if (wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i+ioff,j+joff,k) > 0.0) {
                ksign = 1.0;
                koff = -1;
             } else {
@@ -2243,12 +2234,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             uu = 0.0;
-            if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j+joff,k)*uadv(i,j+joff,k+koff) > 0.0) {
                uu = uadv(i,j+joff,k+koff);
             }
 
@@ -2319,7 +2310,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{z+} without corner corrections
             ////////////////////////////////////////////////
 
-            if (wadv(i,j+joff,k+1) > 0) {
+            if (wadv(i,j+joff,k+1) > 0.0) {
                ksign = 1.0;
                koff = 0;
             } else {
@@ -2328,7 +2319,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             v = 0.0;
-            if (vadv(i,j,k)*vadv(i,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i,j,k+koff) > 0.0) {
                v = vadv(i,j,k+koff);
             }
 
@@ -2373,7 +2364,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z+} with \Gamma^{z+,x+}
             ////////////////////////////////////////////////
 
-            if (uadv(i+1,j+joff,k+koff) > 0) {
+            if (uadv(i+1,j+joff,k+koff) > 0.0) {
                isign = 1.0;
                ioff = 0;
             } else {
@@ -2382,12 +2373,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0.0) {
                ww = wadv(i+ioff,j+joff,k+1);
             }
 
@@ -2451,7 +2442,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z+} with \Gamma^{z+,x-}
             ////////////////////////////////////////////////
 
-            if (uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j+joff,k+koff) > 0.0) {
                isign = 1.0;
                ioff = -1;
             } else {
@@ -2460,12 +2451,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0) {
+            if (wadv(i,j+joff,k+1)*wadv(i+ioff,j+joff,k+1) > 0.0) {
                ww = wadv(i+ioff,j+joff,k+1);
             }
 
@@ -2536,7 +2527,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // compute \Gamma^{z-} without corner corrections
             ////////////////////////////////////////////////
 
-            if (wadv(i,j+joff,k) > 0) {
+            if (wadv(i,j+joff,k) > 0.0) {
                ksign = 1.0;
                koff = -1;
             } else {
@@ -2545,7 +2536,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             v = 0.0;
-            if (vadv(i,j,k)*vadv(i,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i,j,k+koff) > 0.0) {
                v = vadv(i,j,k+koff);
             }
 
@@ -2590,7 +2581,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z-} with \Gamma^{z-,x+}
             ////////////////////////////////////////////////
 
-            if (uadv(i+1,j+joff,k+koff) > 0) {
+            if (uadv(i+1,j+joff,k+koff) > 0.0) {
                isign = 1.0;
                ioff = 0;
             } else {
@@ -2599,12 +2590,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                ww = wadv(i+ioff,j+joff,k);
             }
 
@@ -2668,7 +2659,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             // correct \Gamma^{z-} with \Gamma^{z-,x-}
             ////////////////////////////////////////////////
 
-            if (uadv(i,j+joff,k+koff) > 0) {
+            if (uadv(i,j+joff,k+koff) > 0.0) {
                isign = 1.0;
                ioff = -1;
             } else {
@@ -2677,12 +2668,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
             }
 
             vv = 0.0;
-            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0) {
+            if (vadv(i,j,k)*vadv(i+ioff,j,k+koff) > 0.0) {
                vv = vadv(i+ioff,j,k+koff);
             }
 
             ww = 0.0;
-            if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0) {
+            if (wadv(i,j+joff,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                ww = wadv(i+ioff,j+joff,k);
             }
 
@@ -2800,7 +2791,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              ////////////////////////////////////////////////
 
              // centroid of rectangular volume
-             if (wadv(i,j,k) > 0) {
+             if (wadv(i,j,k) > 0.0) {
                 ksign = 1.0;
                 koff = -1;
              } else {
@@ -2824,7 +2815,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // compute \Gamma^{x+} without corner corrections
              ////////////////////////////////////////////////
 
-             if (uadv(i+1,j,k+koff) > 0) {
+             if (uadv(i+1,j,k+koff) > 0.0) {
                 isign = 1.0;
                 ioff = 0;
              } else {
@@ -2833,7 +2824,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              w = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j,k) > 0.0) {
                 w = wadv(i+ioff,j,k);
              }
 
@@ -2878,7 +2869,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{x+} with \Gamma^{x+,y+}
              ////////////////////////////////////////////////
 
-             if (vadv(i+ioff,j+1,k+koff) > 0) {
+             if (vadv(i+ioff,j+1,k+koff) > 0.0) {
                 jsign = 1.0;
                 joff = 0;
              } else {
@@ -2887,12 +2878,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
              uu = 0.0;
-             if (uadv(i+1,j,k+koff)*uadv(i+1,j+joff,k+koff) > 0) {
+             if (uadv(i+1,j,k+koff)*uadv(i+1,j+joff,k+koff) > 0.0) {
                 uu = uadv(i+1,j+joff,k+koff);
              }
 
@@ -2956,7 +2947,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{x+} with \Gamma^{x+,y-}
              ////////////////////////////////////////////////
 
-             if (vadv(i+ioff,j,k+koff) > 0) {
+             if (vadv(i+ioff,j,k+koff) > 0.0) {
                 jsign = 1.0;
                 joff = -1;
              } else {
@@ -2965,7 +2956,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
@@ -3041,7 +3032,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // compute \Gamma^{x-} without corner corrections
              ////////////////////////////////////////////////
 
-             if (uadv(i,j,k+koff) > 0) {
+             if (uadv(i,j,k+koff) > 0.0) {
                 isign = 1.0;
                 ioff = -1;
              } else {
@@ -3050,7 +3041,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              w = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j,k) > 0.0) {
                 w = wadv(i+ioff,j,k);
              }
 
@@ -3095,7 +3086,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{x-} with \Gamma^{x-,y+}
              ////////////////////////////////////////////////
 
-             if (vadv(i+ioff,j+1,k+koff) > 0) {
+             if (vadv(i+ioff,j+1,k+koff) > 0.0) {
                 jsign = 1.0;
                 joff = 0;
              } else {
@@ -3104,12 +3095,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
              uu = 0.0;
-             if (uadv(i,j,k+koff)*uadv(i,j+joff,k+koff) > 0) {
+             if (uadv(i,j,k+koff)*uadv(i,j+joff,k+koff) > 0.0) {
                 uu = uadv(i,j+joff,k+koff);
              }
 
@@ -3173,7 +3164,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{x-} with \Gamma^{x-,y-}
              ////////////////////////////////////////////////
 
-             if (vadv(i+ioff,j,k+koff) > 0) {
+             if (vadv(i+ioff,j,k+koff) > 0.0) {
                 jsign = 1.0;
                 joff = -1;
              } else {
@@ -3182,12 +3173,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
              uu = 0.0;
-             if (uadv(i,j,k+koff)*uadv(i,j+joff,k+koff) > 0) {
+             if (uadv(i,j,k+koff)*uadv(i,j+joff,k+koff) > 0.0) {
                 uu = uadv(i,j+joff,k+koff);
              }
 
@@ -3258,7 +3249,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // compute \Gamma^{y+} without corner corrections
              ////////////////////////////////////////////////
 
-             if (vadv(i,j+1,k+koff) > 0) {
+             if (vadv(i,j+1,k+koff) > 0.0) {
                 jsign = 1.0;
                 joff = 0;
              } else {
@@ -3267,7 +3258,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              w = 0.0;
-             if (wadv(i,j,k)*wadv(i,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i,j+joff,k) > 0.0) {
                 w = wadv(i,j+joff,k);
              }
 
@@ -3312,7 +3303,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{y+} with \Gamma^{y+,x+}
              ////////////////////////////////////////////////
 
-             if (uadv(i+1,j+joff,k+koff) > 0) {
+             if (uadv(i+1,j+joff,k+koff) > 0.0) {
                 isign = 1.0;
                 ioff = 0;
              } else {
@@ -3321,12 +3312,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
              vv = 0.0;
-             if (vadv(i,j+1,k+koff)*vadv(i+ioff,j+1,k+koff) > 0) {
+             if (vadv(i,j+1,k+koff)*vadv(i+ioff,j+1,k+koff) > 0.0) {
                 vv = vadv(i+ioff,j+1,k+koff);
              }
 
@@ -3390,7 +3381,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{y+} with \Gamma^{y+,x-}
              ////////////////////////////////////////////////
 
-             if (uadv(i,j+joff,k+koff) > 0) {
+             if (uadv(i,j+joff,k+koff) > 0.0) {
                 isign = 1.0;
                 ioff = -1;
              } else {
@@ -3399,12 +3390,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
              vv = 0.0;
-             if (vadv(i,j+1,k+koff)*vadv(i+ioff,j+1,k+koff) > 0) {
+             if (vadv(i,j+1,k+koff)*vadv(i+ioff,j+1,k+koff) > 0.0) {
                 vv = vadv(i+ioff,j+1,k+koff);
              }
 
@@ -3475,7 +3466,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // compute \Gamma^{y-} without corner corrections
              ////////////////////////////////////////////////
 
-             if (vadv(i,j,k+koff) > 0) {
+             if (vadv(i,j,k+koff) > 0.0) {
                 jsign = 1.0;
                 joff = -1;
              } else {
@@ -3484,7 +3475,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              w = 0.0;
-             if (wadv(i,j,k)*wadv(i,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i,j+joff,k) > 0.0) {
                 w = wadv(i,j+joff,k);
              }
 
@@ -3529,7 +3520,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{y-} with \Gamma^{y-,x+};
              ////////////////////////////////////////////////
 
-             if (uadv(i+1,j+joff,k+koff) > 0) {
+             if (uadv(i+1,j+joff,k+koff) > 0.0) {
                 isign = 1.0;
                 ioff = 0;
              } else {
@@ -3538,12 +3529,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
              vv = 0.0;
-             if (vadv(i,j,k+koff)*vadv(i+ioff,j,k+koff) > 0) {
+             if (vadv(i,j,k+koff)*vadv(i+ioff,j,k+koff) > 0.0) {
                 vv = vadv(i+ioff,j,k+koff);
              }
 
@@ -3607,7 +3598,7 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              // correct \Gamma^{y-} with \Gamma^{y-,x-}
              ////////////////////////////////////////////////
 
-             if (uadv(i,j+joff,k+koff) > 0) {
+             if (uadv(i,j+joff,k+koff) > 0.0) {
                 isign = 1.0;
                 ioff = -1;
              } else {
@@ -3616,12 +3607,12 @@ void bdsconc_3d( //lo,hi,s,sn,ng_s,slope,ng_c,uadv,vadv,wadv,ng_u,dx,dt,is_conse
              }
 
              ww = 0.0;
-             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0) {
+             if (wadv(i,j,k)*wadv(i+ioff,j+joff,k) > 0.0) {
                 ww = wadv(i+ioff,j+joff,k);
              }
 
              vv = 0.0;
-             if (vadv(i,j,k+koff)*vadv(i+ioff,j,k+koff) > 0) {
+             if (vadv(i,j,k+koff)*vadv(i+ioff,j,k+koff) > 0.0) {
                 vv = vadv(i+ioff,j,k+koff);
              }
 
