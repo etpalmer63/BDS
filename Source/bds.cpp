@@ -1,6 +1,6 @@
-#include <AMReX_Array.H> 
-#include <AMReX_MultiFab.H> 
-#include <AMReX_REAL.H> 
+#include <AMReX_Array.H>
+#include <AMReX_MultiFab.H>
+#include <AMReX_REAL.H>
 
 #include "bds.H"
 
@@ -9,20 +9,20 @@ const bool limit_slopes = true;
 constexpr amrex::Real eps = 1.0e-10;
 
 
-using namespace amrex;  
+using namespace amrex;
 
 
 
 void bds (const MultiFab& s_mf,
-          const Geometry& geom, 
+          const Geometry& geom,
           MultiFab& sn_mf,
           std::array<MultiFab, AMREX_SPACEDIM>& umac_mf,
           Real dt,
           int comp,   //HACK -- so we could compute for multiple quantities of interest?
           int is_conserv){   //TODO: select each direction
-        
+
         //TODO: levels
-        
+
 
     BoxArray ba = s_mf.boxArray();
     DistributionMapping dmap = s_mf.DistributionMap();
@@ -69,7 +69,7 @@ void bds (const MultiFab& s_mf,
              // only advancing the tracer
              for(int comp=2; comp<=s(n)%nc; ++comp){  */
                 //bdsslope(s_mf, geom, slope_mf, comp);
-                
+
                // bdsconc_3d(lo, hi,
                //                 s, sn, ng_s,
                //                 slope, ng_c,
@@ -97,10 +97,10 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
     // local variables
     MultiFab sint_mf(convert(ba,IntVect(AMREX_D_DECL(1,1,1))), dmap, 1, 1);
 
-#if (AMREX_SPACEDIM ==2)                        
+#if (AMREX_SPACEDIM ==2)
     Real hx = dx[0];
     Real hy = dx[1];
-#elif (AMREX_SPACEDIM ==3)                        
+#elif (AMREX_SPACEDIM ==3)
     Real hx = dx[0];
     Real hy = dx[1];
     Real hz = dx[2];
@@ -112,16 +112,16 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
 #endif
 
 
-    for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(sint_mf); mfi.isValid(); ++mfi){
 
-        const Box& bx = mfi.growntilebox(1); 
+        const Box& bx = mfi.growntilebox(1);
 
         Array4<const Real> const& s    = s_mf.array(mfi, comp);
-        Array4<      Real> const& sint = sint_mf.array(mfi);    
+        Array4<      Real> const& sint = sint_mf.array(mfi);
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
-        
-#if (AMREX_SPACEDIM ==2)                        
+
+#if (AMREX_SPACEDIM ==2)
             // bicubic interpolation to corner points
             // (i,j,k) refers to lower corner of cell
             // Added k index -- placeholder for 2d
@@ -129,7 +129,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                     - 7.0*(s(i-2,j-1,k) + s(i-2,j  ,k) + s(i-1,j-2,k) + s(i  ,j-2,k) +
                            s(i-1,j+1,k) + s(i  ,j+1,k) + s(i+1,j-1,k) + s(i+1,j  ,k))
                    + 49.0*(s(i-1,j-1,k) + s(i  ,j-1,k) + s(i-1,j  ,k) + s(i  ,j  ,k)) ) / 144.0;
-#elif (AMREX_SPACEDIM ==3)                        
+#elif (AMREX_SPACEDIM ==3)
             // tricubic interpolation to corner points
             // (i,j,k) refers to lower corner of cell
             sint(i,j,k) = c1*( s(i  ,j  ,k  ) + s(i-1,j  ,k  ) + s(i  ,j-1,k  )
@@ -155,20 +155,20 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                               +s(i+1,j-2,k+1) + s(i-2,j+1,k-2) + s(i+1,j+1,k-2)
                               +s(i-2,j-2,k-2) + s(i+1,j-2,k-2) );
 #endif
-        }); 
+        });
 
     }
-    
-    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
 
-        const Box& bx = mfi.growntilebox(1); 
+    for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){
+
+        const Box& bx = mfi.growntilebox(1);
 
         Array4<const Real> const& s     = s_mf.array(mfi, comp);
         Array4<const Real> const& sint  = sint_mf.array(mfi);
         Array4<      Real> const& slope = slope_mf.array(mfi);
-        
+
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
-            
+
             // compute initial estimates of slopes from unlimited corner points
 
             // local variables
@@ -179,7 +179,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
             Array1D<Real, 1, 4> diff;
             Array1D<Real, 1, 4> smin;
             Array1D<Real, 1, 4> smax;
-            Array1D<Real, 1, 4> sc; 
+            Array1D<Real, 1, 4> sc;
 
             // sx
             slope(i,j,k,0) = 0.5*(sint(i+1,j+1,k) + sint(i+1,j,k) - sint(i,j+1,k) - sint(i,j,k)) / hx;
@@ -273,14 +273,14 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
 
             } // if(limit_slopes)
 
-   
+
 #elif (AMREX_SPACEDIM ==3)
 
             // Variables local to this loop
             Array1D<Real, 1, 8> diff;
             Array1D<Real, 1, 8> smin;
             Array1D<Real, 1, 8> smax;
-            Array1D<Real, 1, 8> sc; 
+            Array1D<Real, 1, 8> sc;
 
              // compute initial estimates of slopes from unlimited corner points
              // sx
@@ -322,7 +322,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
              slope(i,j,k,6) =       (-sint(i  ,j  ,k  ) + sint(i+1,j  ,k  ) + sint(i  ,j+1,k  )
                                      +sint(i  ,j  ,k+1) - sint(i+1,j+1,k  ) - sint(i+1,j  ,k+1)
                                      -sint(i  ,j+1,k+1) + sint(i+1,j+1,k+1) ) / (hx*hy*hz);
-             
+
              if (limit_slopes) {
 
                  // +++ / sint(i+1,j+1,k+1)
@@ -422,7 +422,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                  for(int ll = 1; ll<=3; ++ll){
                     sumloc = 0.125*(sc(1)+sc(2)+sc(3)+sc(4)+sc(5)+sc(6)+sc(7)+sc(8));
                     sumdif = (sumloc - s(i,j,k))*8.0;
-                    sgndif = std::copysign(1.0,sumdif); 
+                    sgndif = std::copysign(1.0,sumdif);
 
                     for(int mm=1; mm<=8; ++mm){
                        diff(mm) = (sc(mm) - s(i,j,k))*sgndif;
@@ -440,7 +440,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                        if (kdp<1) {
                           div = 1.0;
                        } else {
-                          div = kdp;      
+                          div = kdp;
                        }
 
                        if (diff(mm)>eps) {
@@ -511,7 +511,8 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
     } //MFIter
 } //subroutine bdsslope
 
-void bdsconc_2d ( const MultiFab& s_mf,           
+
+void bdsconc_2d ( const MultiFab& s_mf,
                   const Geometry& geom,
                   MultiFab& sn_mf,
                   const MultiFab& slope_mf,
@@ -525,17 +526,13 @@ void bdsconc_2d ( const MultiFab& s_mf,
     GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
 
     // local variables
-    int Nghost = 1;
+    int Nghost = 0;
 
-    MultiFab siphj_mf(ba, dmap, 1, Nghost);
-    MultiFab sijph_mf(ba, dmap, 1, Nghost);
+    MultiFab siphj_mf(convert(ba,IntVect::TheDimensionVector(0)), dmap, 1, Nghost);
+    MultiFab sijph_mf(convert(ba,IntVect::TheDimensionVector(1)), dmap, 1, Nghost);
 
     Real hx = dx[0];
     Real hy = dx[1];
-
-
-
-
 
     //allocate(siphj(lo(1):hi(1)+1,lo(2):hi(2)  ))
     //allocate(sijph(lo(1):hi(1)  ,lo(2):hi(2)+1))
@@ -546,7 +543,7 @@ void bdsconc_2d ( const MultiFab& s_mf,
     //   for(int i = lo(1)-1; i<=hi(1); ++i){
 
     // calculate Gamma plus for flux F
-    for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){
 
         const Box& bx = mfi.tilebox();
 
@@ -557,14 +554,14 @@ void bdsconc_2d ( const MultiFab& s_mf,
 
         //local variables
         Array4<      Real> const& siphj = siphj_mf.array(mfi);
-        
+
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
             i--; //HACK -- adjust indices -- ask about this
-            j--;
+            //j--;
 
             //local variables
-            
+
             Real hxs,hys;
             Real gamp,gamm;
             Real vtrans,stem,vaddif,vdif;
@@ -673,7 +670,7 @@ void bdsconc_2d ( const MultiFab& s_mf,
                    (vadv(iup,j+1,k)-vadv(iup,j,k))/hy;
             siphj(i+1,j,k) = stem - vdif - vaddif + 0.5*dt*stem*divu;
 
-            
+
 
         });
     } // end of calculation of siphj}
@@ -683,7 +680,7 @@ void bdsconc_2d ( const MultiFab& s_mf,
     //   for(int i = lo(1); i<=hi(1); ++i){
 
     // calculate Gamma plus for flux G
-    for ( MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){
 
         const Box& bx = mfi.tilebox();
 
@@ -694,12 +691,12 @@ void bdsconc_2d ( const MultiFab& s_mf,
 
         //local variables
         Array4<      Real> const& sijph = sijph_mf.array(mfi);
-        
+
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
-            i--; //HACK -- adjust indices -- ask about this
+            //i--; //HACK -- adjust indices -- ask about this
             j--;
-            
+
             //local variables
             Real hxs,hys;
             Real gamp,gamm;
@@ -718,7 +715,7 @@ void bdsconc_2d ( const MultiFab& s_mf,
                jup   = j+1;
                jsign = -1.0;
             }
-            
+
 
 
             vtrans = uadv(i+1,jup,k);
@@ -815,42 +812,67 @@ void bdsconc_2d ( const MultiFab& s_mf,
         });
     }
 
-#if (0)
     // advance solution
     if (is_conserv) {
 
        // conservative update
-       for(int j = lo(2); j<=hi(2); ++j){
-          for(int i = lo(1); i<=hi(1); ++i){
-             sn(i,j) = s(i,j) - dt*(
-                  (siphj(i+1,j,k)*uadv(i+1,j,k)-siphj(i,j,k)*uadv(i,j,k))/hx +
-                  (sijph(i,j+1,k)*vadv(i,j+1,k)-sijph(i,j,k)*vadv(i,j,k))/hy);
-          }
-       }
+       //for(int j = lo(2); j<=hi(2); ++j){
+       //   for(int i = lo(1); i<=hi(1); ++i){
+
+        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){
+
+            const Box& bx = mfi.tilebox();
+
+            Array4<const Real> const& s  = s_mf.array(mfi, comp);
+            Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
+
+            Array4<const Real> const& siphj  = siphj_mf.array(mfi);
+            Array4<const Real> const& sijph  = sijph_mf.array(mfi);
+            Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+            Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+               sn(i,j,k) = s(i,j,k) - dt*(
+                    (siphj(i+1,j,k)*uadv(i+1,j,k)-siphj(i,j,k)*uadv(i,j,k))/hx +
+                    (sijph(i,j+1,k)*vadv(i,j+1,k)-sijph(i,j,k)*vadv(i,j,k))/hy);
+            });
+        }
 
     } else  {
 
        // non-conservative update
-       for(int j = lo(2); j<=hi(2); ++j){
-          for(int i = lo(1); i<=hi(1); ++i){
-             uconv = 0.5 * (uadv(i+1,j,k)+uadv(i,j,k));
-             vconv = 0.5 * (vadv(i,j+1,k)+vadv(i,j,k));
+       //for(int j = lo(2); j<=hi(2); ++j){
+       //    for(int i = lo(1); i<=hi(1); ++i){
+        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){
 
-             sn(i,j) = s(i,j) - dt*(
-                  uconv * (siphj(i+1,j,k) - siphj(i,j,k)) / hx +
-                  vconv * (sijph(i,j+1,k) - sijph(i,j,k)) / hy );
-          }
-       }
+            const Box& bx = mfi.tilebox();
+
+            Array4<const Real> const& s  = s_mf.array(mfi, comp);
+            Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
+
+            Array4<const Real> const& siphj  = siphj_mf.array(mfi);
+            Array4<const Real> const& sijph  = sijph_mf.array(mfi);
+            Array4<const Real> const& uadv  = umac_mf[0].array(mfi);
+            Array4<const Real> const& vadv  = umac_mf[1].array(mfi);
+
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
+
+                Real uconv = 0.5 * (uadv(i+1,j,k)+uadv(i,j,k));
+                Real vconv = 0.5 * (vadv(i,j+1,k)+vadv(i,j,k));
+
+                sn(i,j,k) = s(i,j,k) - dt*(
+                     uconv * (siphj(i+1,j,k) - siphj(i,j,k)) / hx +
+                     vconv * (sijph(i,j+1,k) - sijph(i,j,k)) / hy );
+            });
+        }
 
     }
 
-    // deallocate(siphj,sijph); //HACK - wrong, just trying to compile
 
-#endif
 } // end subroutine bdsconc_2d
 
-
-void bdsconc_3d (const MultiFab& s_mf,           
+void bdsconc_3d (const MultiFab& s_mf,
                  const Geometry& geom,
                  MultiFab& sn_mf,
                  const MultiFab& slope_mf,
@@ -866,7 +888,7 @@ void bdsconc_3d (const MultiFab& s_mf,
     // local variables
     int Nghost = 1;
 
-    MultiFab sedgex_mf(ba, dmap, 1, Nghost); 
+    MultiFab sedgex_mf(ba, dmap, 1, Nghost);
     MultiFab sedgey_mf(ba, dmap, 1, Nghost);
     MultiFab sedgez_mf(ba, dmap, 1, Nghost);
 
@@ -886,7 +908,7 @@ void bdsconc_3d (const MultiFab& s_mf,
     constexpr Real sixth = 1.0/6.0;
 
     // compute cell-centered ux, vy, and wz
-    for ( MFIter mfi(ux_mf); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(ux_mf); mfi.isValid(); ++mfi){
 
         const Box& bx = mfi.growntilebox(1);
 
@@ -908,7 +930,7 @@ void bdsconc_3d (const MultiFab& s_mf,
     }
 
     // compute sedgex on x-faces
-    for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){
 
         const Box& bx = mfi.tilebox();
 
@@ -923,7 +945,7 @@ void bdsconc_3d (const MultiFab& s_mf,
         Array4<      Real> const& vy    = vy_mf.array(mfi);
         Array4<      Real> const& wz    = wz_mf.array(mfi);
         Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
-        
+
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
             //local variables
@@ -939,10 +961,10 @@ void bdsconc_3d (const MultiFab& s_mf,
 
             Real isign,jsign,ksign;
             Real val1,val2,val3,val4,val5;
-            Real u; 
+            Real u;
             Real uu,vv,ww;
             Real gamma,gamma2;
-            
+
             ////////////////////////////////////////////////
             // compute sedgex without transverse corrections
             ////////////////////////////////////////////////
@@ -1006,12 +1028,12 @@ void bdsconc_3d (const MultiFab& s_mf,
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p2(ll)+p3(ll))/2.0;
             }
-            val1 = eval(s(i+ioff,j+joff,k),slope_tmp,del); 
+            val1 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p3(ll))/2.0;
             }
-            val2 = eval(s(i+ioff,j+joff,k),slope_tmp,del); 
+            val2 = eval(s(i+ioff,j+joff,k),slope_tmp,del);
 
             for(int ll=1; ll<=3; ++ll ){
                del(ll) = (p1(ll)+p2(ll))/2.0;
@@ -1840,11 +1862,11 @@ void bdsconc_3d (const MultiFab& s_mf,
 
         });
     } // compute sedgex on x-faces
-            
+
 
 
     // compute sedgey on y-faces
-    for ( MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){
 
         const Box& bx = mfi.tilebox();
 
@@ -1859,7 +1881,7 @@ void bdsconc_3d (const MultiFab& s_mf,
         Array4<      Real> const& vy    = vy_mf.array(mfi);
         Array4<      Real> const& wz    = wz_mf.array(mfi);
         Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
-        
+
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
             //local variables
@@ -1878,7 +1900,7 @@ void bdsconc_3d (const MultiFab& s_mf,
             Real v;
             Real uu,vv,ww;
             Real gamma,gamma2;
-            
+
             ////////////////////////////////////////////////
             // compute sedgey without transverse corrections
             ////////////////////////////////////////////////
@@ -2781,7 +2803,7 @@ void bdsconc_3d (const MultiFab& s_mf,
     //   for(int j=lo(2); j<=hi(2); ++j){
     //      for(int i=lo(1); i<=hi(1); ++i){
 
-    for ( MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){ 
+    for ( MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){
 
         const Box& bx = mfi.tilebox();
 
@@ -2798,7 +2820,7 @@ void bdsconc_3d (const MultiFab& s_mf,
         //Array4<      Real> const& sedgex = sedgex_mf.array(mfi);
         //Array4<      Real> const& sedgey = sedgey_mf.array(mfi);
         Array4<      Real> const& sedgez = sedgez_mf.array(mfi);
-        
+
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k){
 
             //local variables
@@ -3713,7 +3735,7 @@ void bdsconc_3d (const MultiFab& s_mf,
              sedgez(i,j,k) = sedgez(i,j,k) + dt*gamma/(2.0*hy);
 
           });
-       
+
     } //compute sedgez
 
 
@@ -3728,9 +3750,9 @@ void bdsconc_3d (const MultiFab& s_mf,
        //      for(int i = lo(1); i<=hi(1); ++i){
 
 
-        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
+        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){
 
-            const Box& bx = mfi.tilebox();  //HACK -- adjustments here? 
+            const Box& bx = mfi.tilebox();  //HACK -- adjustments here?
 
             Array4<const Real> const& s  = s_mf.array(mfi, comp);
             Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
@@ -3760,7 +3782,7 @@ void bdsconc_3d (const MultiFab& s_mf,
        //   for(int j = lo(2); j<=hi(2); ++j){
        //      for(int i = lo(1); i<=hi(1); ++i){
 
-        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){ 
+        for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){
 
             const Box& bx = mfi.tilebox();
 
@@ -3795,8 +3817,9 @@ void bdsconc_3d (const MultiFab& s_mf,
 
 }  //end subroutine bdsconc_3d
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Real eval (const Real s,
-           Array1D<Real,1,7>& slope, 
+           Array1D<Real,1,7>& slope,
            Array1D<Real,1,3>& del ){
 
     Real val = s + del(1)*slope(1)        + del(2)*slope(2)        + del(3)*slope(3)
