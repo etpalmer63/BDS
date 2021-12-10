@@ -72,7 +72,7 @@ void main_main ()
         // Inputs, S old, S new, U mac, dx, dt, is_conservative
 
 
-        
+
 
 
 
@@ -126,12 +126,12 @@ void main_main ()
     // we allocate two phi multifabs; one will store the old state, the other the new.
 
     //initialize data on the multifab
-    MultiFab s_old_mf(ba, dm, Ncomp, Nghost); 
+    MultiFab s_old_mf(ba, dm, Ncomp, Nghost);
     MultiFab s_new_mf(ba, dm, Ncomp, Nghost);
 
     //std::array<MultiFab, AMREX_SPACEDIM> umac_mf(ba, dm, 3, Nghost);
     std::array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
-                                                              MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost), 
+                                                              MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
     //MultiFab uVel(ba, dm, Ncomp, Nghost);
     //MultiFab vVel(ba, dm, Ncomp, Nghost);
@@ -180,7 +180,7 @@ void main_main ()
 
             umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
             vmac(i,j,k) = 0.25;
-            wmac(i,j,k) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))); 
+            wmac(i,j,k) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5)));
 
             Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
@@ -224,7 +224,7 @@ void main_main ()
             const Array4<Real>& phiNew = phi_new.array(mfi);
 
 
-            //Call BDS Fortran routine 
+            //Call BDS Fortran routine
 
 
 
@@ -257,7 +257,7 @@ void main_main ()
         if (plot_int > 0 && step%plot_int == 0)
         {
             const std::string& pltfile = amrex::Concatenate("plt",step,5);
-            WriteSingleLevelPlotfile(pltfile, s_new_mf, {"phi"}, geom, time, step);
+            WriteSingleLevelPlotfile(pltfile, s_new_mf, {"S"}, geom, time, step);
         }
     }
 }
