@@ -102,8 +102,8 @@ void main_main ()
     ba.maxSize(max_grid_size);
 
     // This defines the physical box, [0,1] in each direction.
-    RealBox real_box({AMREX_D_DECL( 0., 0., 0.)},
-                     {AMREX_D_DECL( 1., 1., 1.)});
+    RealBox real_box({AMREX_D_DECL( -0.5, -0.5, -0.5)},
+                     {AMREX_D_DECL( 1.5, 1.5, 1.5)});
 
     // periodic in all direction
     Array<int,AMREX_SPACEDIM> is_periodic{AMREX_D_DECL(1,1,1)};
@@ -202,6 +202,7 @@ void main_main ()
         int step = 0;
         const std::string& pltfile = amrex::Concatenate("plt",step,5);
         WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
+        Print() << "Time: " << time << " Sum of S: " << s_old_mf.sum() << std::endl;
     }
 
     int comp = 0; //HACK figure out what to do with this later
@@ -251,7 +252,7 @@ void main_main ()
         MultiFab::Copy(s_old_mf, s_new_mf, 0, 0, 1, 0);
 
         // Tell the I/O Processor to write out which step we're doing
-        amrex::Print() << "Advanced step " << step << "\n";
+        //amrex::Print() << "Advanced step " << step << "\n";
 
         // Write a plotfile of the current data (plot_int was defined in the inputs file)
         if (plot_int > 0 && step%plot_int == 0)
@@ -259,5 +260,7 @@ void main_main ()
             const std::string& pltfile = amrex::Concatenate("plt",step,5);
             WriteSingleLevelPlotfile(pltfile, s_new_mf, {"S"}, geom, time, step);
         }
+
+        Print() << "Time: " << time << " Sum of S: " << s_old_mf.sum() << std::endl;
     }
 }
