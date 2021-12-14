@@ -152,6 +152,9 @@ void main_main ()
     {
         const Box& bx = mfi.validbox();
 
+        const Box& bx_x = mfi.nodaltilebox(0);
+        const Box& bx_y = mfi.nodaltilebox(1);
+
         Array4< Real> const& umac = umac_mf[0].array(mfi);  //HACK -- later may need to adjusted.
         Array4< Real> const& vmac = umac_mf[1].array(mfi);
 #if (AMREX_SPACEDIM == 3)
@@ -192,8 +195,43 @@ void main_main ()
             }
 
         });
-    }
 
+        
+        // x faces
+        amrex::ParallelFor(bx_x, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+        {
+            Real x = i * dx[0];
+            Real y = (j+0.5) * dx[1];
+            Real z = (k+0.5) * dx[2];
+
+            // r = sqrt(x-...
+
+            if (prob_type == 0) {
+                umac(i,j,k) = 1.0;
+            } else if (prob_type == 1){
+                
+            }
+        }
+
+        // y faces
+        amrex::ParallelFor(bx_y, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+        {
+            Real x = (i+0.5) * dx[0];
+            Real y =  j      * dx[1];
+            Real z = (k+0.5) * dx[2];
+
+            // r = sqrt(x-...
+
+            vmac(i,j,k) = ....
+            
+        }
+
+
+            
+    }
+        umac[0].FillBoundary(geom.periodicity());
+        umac[1].FillBoundary(geom.periodicity());
+        umac[2].FillBoundary(geom.periodicity());
 
 
     // Write a plotfile of the initial data if plot_int > 0
