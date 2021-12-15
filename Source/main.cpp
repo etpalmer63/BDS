@@ -1,5 +1,6 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_ParmParse.H>
+#include <AMReX_MultiFabUtil.H>
 
 #include "bds.H"
 
@@ -74,8 +75,6 @@ void main_main ()
 
 
 
-
-
     }
 
     // **********************************
@@ -102,8 +101,8 @@ void main_main ()
     ba.maxSize(max_grid_size);
 
     // This defines the physical box, [0,1] in each direction.
-    RealBox real_box({AMREX_D_DECL( -0.5, -0.5, -0.5)},
-                     {AMREX_D_DECL( 1.5, 1.5, 1.5)});
+    RealBox real_box({AMREX_D_DECL( 0.0, 0.0, 0.0)},
+                     {AMREX_D_DECL( 1.0, 1.0, 1.0)});
 
     // periodic in all direction
     Array<int,AMREX_SPACEDIM> is_periodic{AMREX_D_DECL(1,1,1)};
@@ -125,17 +124,22 @@ void main_main ()
 
     // we allocate two phi multifabs; one will store the old state, the other the new.
 
+
     //initialize data on the multifab
     MultiFab s_old_mf(ba, dm, Ncomp, Nghost);
     MultiFab s_new_mf(ba, dm, Ncomp, Nghost);
 
     //std::array<MultiFab, AMREX_SPACEDIM> umac_mf(ba, dm, 3, Nghost);
-    std::array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
+    Array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
     //MultiFab uVel(ba, dm, Ncomp, Nghost);
     //MultiFab vVel(ba, dm, Ncomp, Nghost);
     //MultiFab wVel(ba, dm, Ncomp, Nghost);
+
+    // Track Divergence
+    //MultiFab umac_div(ba, dm, 3, Nghost);
+
 
     // time = starting time in the simulation
     Real time = 0.0;
@@ -143,8 +147,34 @@ void main_main ()
     // **********************************
     // INITIALIZE DATA
 
+            // Save this for later
+            // 2D
+            //umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) ))/0.5);
+            //vmac(i,j,k) = 0.25;
+            // 3D
+            //umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
+            //vmac(i,j,k) = 0.25;
+            //wmac(i,j,k) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5)));
 
 
+    AMREX_D_DECL( umac_mf[0].setVal(1.0),
+                  umac_mf[1].setVal(0.5),
+                  umac_mf[2].setVal(0.25) );
+
+    Real umac_max = amrex::max(AMREX_D_DECL(umac_mf[0].norm0(0,0),
+                                            umac_mf[1].norm0(0,0),
+                                            umac_mf[2].norm0(0,0)));
+
+    Print() << "umac_max " << umac_max << std::endl;
+
+
+
+    // Set time step size dt = dx / (largest velocities) * CFL
+    // For constant velocities this is:
+    constexpr Real CFLnum = 0.9;
+    dt = dx[0] / umac_max * CFLnum;  //assumes dx constant across all dimensions
+
+    Print() << "dt: " << dt << std::endl;
 
 
     // loop over boxes
@@ -152,11 +182,11 @@ void main_main ()
     {
         const Box& bx = mfi.validbox();
 
-        Array4< Real> const& umac = umac_mf[0].array(mfi);  //HACK -- later may need to adjusted.
-        Array4< Real> const& vmac = umac_mf[1].array(mfi);
-#if (AMREX_SPACEDIM == 3)
-        Array4< Real> const& wmac = umac_mf[2].array(mfi);
-#endif
+//        Array4< Real> const& umac = umac_mf[0].array(mfi);  //HACK -- later may need to adjusted.
+//        Array4< Real> const& vmac = umac_mf[1].array(mfi);
+//#if (AMREX_SPACEDIM == 3)
+//        Array4< Real> const& wmac = umac_mf[2].array(mfi);
+//#endif
         Array4< Real> const& S_old = s_old_mf.array(mfi);
 
         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
@@ -167,9 +197,6 @@ void main_main ()
             Real x = (i+0.5) * dx[0];
             Real y = (j+0.5) * dx[1];
 
-            umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) ))/0.5);
-            vmac(i,j,k) = 0.25;
-
             Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2));
 
 #elif (AMREX_SPACEDIM == 3)
@@ -177,10 +204,6 @@ void main_main ()
             Real x = (i+0.5) * dx[0];
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
-
-            umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
-            vmac(i,j,k) = 0.25;
-            wmac(i,j,k) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5)));
 
             Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
@@ -207,9 +230,15 @@ void main_main ()
 
     int comp = 0; //HACK figure out what to do with this later
 
+    constexpr Real EndTime = 1.0;
 
     for (int step = 1; step <= nsteps; ++step)
     {
+        // Land at exactly 1 sec.
+        if ( time + dt > EndTime) { dt = EndTime - time; }
+
+
+
         // fill periodic ghost cells
         s_old_mf.FillBoundary(geom.periodicity());
 
@@ -251,6 +280,9 @@ void main_main ()
         // copy new solution into old solution
         MultiFab::Copy(s_old_mf, s_new_mf, 0, 0, 1, 0);
 
+        // calculate norm0 of divergence
+        //computeDivergence(umac_div, umac_mf, geom);
+
         // Tell the I/O Processor to write out which step we're doing
         //amrex::Print() << "Advanced step " << step << "\n";
 
@@ -261,6 +293,9 @@ void main_main ()
             WriteSingleLevelPlotfile(pltfile, s_new_mf, {"S"}, geom, time, step);
         }
 
-        Print() << "Time: " << time << " Sum of S: " << s_old_mf.sum() << std::endl;
+        printf("Time: %.6f Sum of S: %.6f\n", time, s_old_mf.sum());
+        //Print() << "Time: " << time << " Sum of S: " << s_old_mf.sum() << std::endl;
+
+        if ( time >= EndTime ) { return; }
     }
 }

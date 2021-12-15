@@ -1,8 +1,8 @@
 n_cell = 128
-max_grid_size = 16
+max_grid_size = 32
 
 nsteps = 100000
-plot_int = 200
+plot_int = 1
 
 dt = 1.e-5
 
