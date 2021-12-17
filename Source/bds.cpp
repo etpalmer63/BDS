@@ -30,7 +30,7 @@ void bds (const MultiFab& s_mf,
 
     // this will hold slx, sly, and slxy
     int nslope = (AMREX_SPACEDIM == 2) ? 3 : 7;
-    MultiFab slope_mf(ba,dmap,nslope,1);
+    MultiFab slope_mf(ba,dmap,nslope,1); // -- GPU error traces to here.
 
     bdsslope(s_mf, geom, slope_mf, comp);
 

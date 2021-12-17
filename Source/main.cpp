@@ -71,10 +71,6 @@ void main_main ()
         pp.get("is_conserv", is_conserv);
 
         // Inputs, S old, S new, U mac, dx, dt, is_conservative
-
-
-
-
     }
 
     // **********************************
@@ -130,7 +126,7 @@ void main_main ()
     MultiFab s_new_mf(ba, dm, Ncomp, Nghost);
 
     //std::array<MultiFab, AMREX_SPACEDIM> umac_mf(ba, dm, 3, Nghost);
-    Array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
+    std::array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
     //MultiFab uVel(ba, dm, Ncomp, Nghost);
@@ -218,6 +214,7 @@ void main_main ()
     }
 
 
+    Print() << "Write step 0" << std::endl;
 
     // Write a plotfile of the initial data if plot_int > 0
     if (plot_int > 0)
@@ -225,12 +222,15 @@ void main_main ()
         int step = 0;
         const std::string& pltfile = amrex::Concatenate("plt",step,5);
         WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
-        Print() << "Time: " << time << " Sum of S: " << s_old_mf.sum() << std::endl;
+        Real S_sum = s_old_mf.sum();
+        Print() << "Time: " << time << " Sum of S: " << S_sum << std::endl;
     }
 
     int comp = 0; //HACK figure out what to do with this later
 
     constexpr Real EndTime = 1.0;
+
+    Print() << "Begin time step loop" << std::endl;
 
     for (int step = 1; step <= nsteps; ++step)
     {
