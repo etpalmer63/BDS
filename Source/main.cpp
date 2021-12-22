@@ -224,14 +224,31 @@ void main_main ()
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
 
-            Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
+            //Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
-#endif
+            
+            Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-1.0,2) + std::pow(z-0.75,2));
+            
             if ( r <= 0.1 ) {
               S_old(i,j,k) = 1.0;
             } else {
               S_old(i,j,k) = 0.0;
             }
+
+            r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.0,2) + std::pow(z-0.75,2));
+            
+            if ( r <= 0.1 ) {
+              S_old(i,j,k) += 1.0;
+            } else {
+              S_old(i,j,k) += 0.0;
+            }
+
+#endif
+            //if ( r <= 0.1 ) {
+            //  S_old(i,j,k) = 1.0;
+            //} else {
+            //  S_old(i,j,k) = 0.0;
+            //}
 
         });
     }
