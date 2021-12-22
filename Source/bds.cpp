@@ -904,7 +904,7 @@ void bdsconc_3d (const MultiFab& s_mf,
     Real dt3 = dt/3.0;
     Real dt4 = dt/4.0;
 
-    constexpr Real half = 0.5;
+    constexpr Real half = 0.5; //shadows global variable
     constexpr Real sixth = 1.0/6.0;
 
     // compute cell-centered ux, vy, and wz

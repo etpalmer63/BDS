@@ -190,10 +190,33 @@ void main_main ()
 
 #if (AMREX_SPACEDIM == 2)
 
+           
+
+
             Real x = (i+0.5) * dx[0];
             Real y = (j+0.5) * dx[1];
 
-            Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2));
+
+            Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2));
+
+            
+            //Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-1.0,2));
+
+            //if ( r <= 0.1 ) {
+            //  S_old(i,j,k) = 1.0;
+            //} else {
+            //  S_old(i,j,k) = 0.0;
+            //}
+
+            //r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.0,2));
+
+            //if ( r <= 0.1 ) {
+            //  S_old(i,j,k) += 1.0;
+            //} else {
+            //  S_old(i,j,k) += 0.0;
+            //}
+
+
 
 #elif (AMREX_SPACEDIM == 3)
 
@@ -201,7 +224,7 @@ void main_main ()
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
 
-            Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
+            Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
 #endif
             if ( r <= 0.1 ) {
@@ -225,6 +248,8 @@ void main_main ()
         Real S_sum = s_old_mf.sum();
         Print() << "Time: " << time << " Sum of S: " << S_sum << std::endl;
     }
+
+
 
     int comp = 0; //HACK figure out what to do with this later
 
