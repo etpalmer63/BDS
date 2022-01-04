@@ -419,7 +419,7 @@ void bdsslope ( MultiFab const& s_mf, const Geometry& geom, MultiFab& slope_mf, 
                  }
 
                  // iterative loop
-                 for(int ll = 1; ll<=3; ++ll){
+                 for(int ll = 1; ll<=6; ++ll){
                     sumloc = 0.125*(sc(1)+sc(2)+sc(3)+sc(4)+sc(5)+sc(6)+sc(7)+sc(8));
                     sumdif = (sumloc - s(i,j,k))*8.0;
                     sgndif = std::copysign(1.0,sumdif);
