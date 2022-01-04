@@ -815,6 +815,8 @@ void bdsconc_2d ( const MultiFab& s_mf,
     // advance solution
     if (is_conserv) {
 
+       // Print() << "Conservative Update ";
+
        // conservative update
        //for(int j = lo(2); j<=hi(2); ++j){
        //   for(int i = lo(1); i<=hi(1); ++i){
@@ -841,6 +843,7 @@ void bdsconc_2d ( const MultiFab& s_mf,
 
     } else  {
 
+        //Print() << "Non-Conservative Update ";
        // non-conservative update
        //for(int j = lo(2); j<=hi(2); ++j){
        //    for(int i = lo(1); i<=hi(1); ++i){
@@ -3743,6 +3746,8 @@ void bdsconc_3d (const MultiFab& s_mf,
 
     // advance solution
     if (is_conserv) {
+            
+        // Print() << "Conservative Update ";
 
        // conservative update
        //for(int k = lo(3); k<=hi(3); ++k){
@@ -3752,7 +3757,7 @@ void bdsconc_3d (const MultiFab& s_mf,
 
         for ( MFIter mfi(s_mf); mfi.isValid(); ++mfi){
 
-            const Box& bx = mfi.tilebox();  //HACK -- adjustments here?
+            const Box& bx = mfi.tilebox();
 
             Array4<const Real> const& s  = s_mf.array(mfi, comp);
             Array4<      Real> const& sn  = sn_mf.array(mfi, comp);
@@ -3777,6 +3782,8 @@ void bdsconc_3d (const MultiFab& s_mf,
 
     } else  {
 
+        // Print() << "Non-Conservative Update ";
+                                      
        // non-conservative update
        //for(int k = lo(3); k<=hi(3); ++k){
        //   for(int j = lo(2); j<=hi(2); ++j){

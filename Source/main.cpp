@@ -1,8 +1,12 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_ParmParse.H>
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_VisMF.H>
 
 #include "bds.H"
+
+constexpr amrex::Real PI = 3.141592653589793238;
+
 
 using namespace amrex;
 void main_main();
@@ -125,37 +129,73 @@ void main_main ()
     MultiFab s_old_mf(ba, dm, Ncomp, Nghost);
     MultiFab s_new_mf(ba, dm, Ncomp, Nghost);
 
-    //std::array<MultiFab, AMREX_SPACEDIM> umac_mf(ba, dm, 3, Nghost);
     std::array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
-    //MultiFab uVel(ba, dm, Ncomp, Nghost);
-    //MultiFab vVel(ba, dm, Ncomp, Nghost);
-    //MultiFab wVel(ba, dm, Ncomp, Nghost);
-
-    // Track Divergence
-    //MultiFab umac_div(ba, dm, 3, Nghost);
-
-
+    
     // time = starting time in the simulation
     Real time = 0.0;
 
     // **********************************
     // INITIALIZE DATA
 
-            // Save this for later
-            // 2D
+            //Cylindrical shear layer -- save for later
             //umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) ))/0.5);
             //vmac(i,j,k) = 0.25;
-            // 3D
+            //
+            //Cylindrical shear layer
             //umac(i,j,k) = std::tanh(amrex::Math::abs(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2) ))/0.333);
             //vmac(i,j,k) = 0.25;
             //wmac(i,j,k) = 0.05*std::exp(-15*((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5)));
 
 
-    AMREX_D_DECL( umac_mf[0].setVal(1.0),
-                  umac_mf[1].setVal(0.5),
-                  umac_mf[2].setVal(0.25) );
+
+    //umac is constant even in variable velocity scheme
+    umac_mf[0].setVal(1.0);
+
+#if (AMREX_SPACEDIM > 1)
+
+    for (MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){
+
+        const Box& bx = mfi.grownnodaltilebox(1,Nghost);
+        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
+        Array4<Real> const& vmac = umac_mf[1].array(mfi);
+
+        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+        {
+            //Real x = (i+0.5) * dx[0];
+            vmac(i,j,k) = 0.5;//  + 0.5  * std::sin(2*PI*x);
+        });
+    }
+
+#endif
+#if (AMREX_SPACEDIM > 2)
+
+    for (MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){
+
+        const Box& bx = mfi.grownnodaltilebox(2,Nghost);
+        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
+        Array4<Real> const& wmac = umac_mf[2].array(mfi);
+
+        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+        {
+            //Real x = (i+0.5) * dx[0];
+            wmac(i,j,k) = 0.25;// + 0.25 * std::cos(2*PI*x);
+        });
+    }
+
+#endif
+
+    // Constant velocity in all directions
+    //AMREX_D_DECL( umac_mf[0].setVal(1.0),
+    //              umac_mf[1].setVal(0.5),
+    //              umac_mf[2].setVal(0.25) );
+
+
+    AMREX_D_DECL( VisMF::Write(umac_mf[0], "umac.mf"),
+                  VisMF::Write(umac_mf[1], "vmac.mf"),
+                  VisMF::Write(umac_mf[2], "wmac.mf") );
+
 
     Real umac_max = amrex::max(AMREX_D_DECL(umac_mf[0].norm0(0,0),
                                             umac_mf[1].norm0(0,0),
@@ -177,21 +217,12 @@ void main_main ()
     for (MFIter mfi(s_old_mf); mfi.isValid(); ++mfi)
     {
         const Box& bx = mfi.validbox();
-
-//        Array4< Real> const& umac = umac_mf[0].array(mfi);  //HACK -- later may need to adjusted.
-//        Array4< Real> const& vmac = umac_mf[1].array(mfi);
-//#if (AMREX_SPACEDIM == 3)
-//        Array4< Real> const& wmac = umac_mf[2].array(mfi);
-//#endif
         Array4< Real> const& S_old = s_old_mf.array(mfi);
 
         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
         {
 
 #if (AMREX_SPACEDIM == 2)
-
-           
-
 
             Real x = (i+0.5) * dx[0];
             Real y = (j+0.5) * dx[1];
@@ -224,6 +255,7 @@ void main_main ()
 
             Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
+            // Exact solution hack -- shperical step
             //Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-1.0,2) + std::pow(z-0.75,2));
             //
             //if ( r <= 0.1 ) {
@@ -231,7 +263,7 @@ void main_main ()
             //} else {
             //  S_old(i,j,k) = 0.0;
             //}
-
+            //
             //r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.0,2) + std::pow(z-0.75,2));
             //
             //if ( r <= 0.1 ) {
@@ -240,19 +272,28 @@ void main_main ()
             //  S_old(i,j,k) += 0.0;
             //}
 
+            // Exact solution hack -- Gaussian Bump
+            //Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-1.0,2) + std::pow(z-0.75,2));
+            //S_old(i,j,k) = std::exp(-300.0*std::pow(r,2));
+            //r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.0,2) + std::pow(z-0.75,2));
+            //S_old(i,j,k) += std::exp(-300.0*std::pow(r,2));
+
 #endif
             //Gaussian bump
-            S_old(i,j,k) = std::exp(-300.0*std::pow(r,2));
+            //S_old(i,j,k) = std::exp(-300.0*std::pow(r,2));
             
-            //if ( r <= 0.1 ) {
-            //  S_old(i,j,k) = 1.0;
-            //} else {
-            //  S_old(i,j,k) = 0.0;
-            //}
+            // Spherical step function
+            if ( r <= 0.1 ) {
+              S_old(i,j,k) = 1.0;
+            } else {
+              S_old(i,j,k) = 0.0;
+            }
 
         });
     }
 
+    Real S_max = s_old_mf.norm0(0,0);
+    Print() << "S max " << S_max << std::endl;
 
     Print() << "Write step 0" << std::endl;
 
@@ -262,8 +303,10 @@ void main_main ()
         int step = 0;
         const std::string& pltfile = amrex::Concatenate("plt",step,5);
         WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
-        Real S_sum = s_old_mf.sum();
-        Print() << "Time: " << time << " Sum of S: " << S_sum << std::endl;
+
+        Print() << std::fixed << std::setprecision(8)
+                << "Time: " << std::setw(16) << time << " Sum of S: "
+                << s_old_mf.sum() << std::endl;
     }
 
 
@@ -285,37 +328,7 @@ void main_main ()
         s_old_mf.FillBoundary(geom.periodicity());
 
         bds(s_old_mf, geom, s_new_mf, umac_mf, dt, comp, is_conserv);
-        // new_phi = old_phi + dt * Laplacian(old_phi)
-        // loop over boxes
-    /*
-        for ( MFIter mfi(phi_old); mfi.isValid(); ++mfi )
-        {
-            const Box& bx = mfi.validbox();
 
-            const Array4<Real>& phiOld = phi_old.array(mfi);
-            const Array4<Real>& phiNew = phi_new.array(mfi);
-
-
-            //Call BDS Fortran routine
-
-
-
-
-
-
-            // advance the data by dt
-            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k)
-            {
-                phiNew(i,j,k) = phiOld(i,j,k) + dt *
-                    ( (phiOld(i+1,j,k) - 2.*phiOld(i,j,k) + phiOld(i-1,j,k)) / (dx[0]*dx[0])
-                     +(phiOld(i,j+1,k) - 2.*phiOld(i,j,k) + phiOld(i,j-1,k)) / (dx[1]*dx[1])
-#if (AMREX_SPACEDIM == 3)
-                     +(phiOld(i,j,k+1) - 2.*phiOld(i,j,k) + phiOld(i,j,k-1)) / (dx[2]*dx[2])
-#endif
-                        );
-            });
-        }
-*/
         // update time
         time = time + dt;
 
@@ -325,9 +338,6 @@ void main_main ()
         // calculate norm0 of divergence
         //computeDivergence(umac_div, umac_mf, geom);
 
-        // Tell the I/O Processor to write out which step we're doing
-        //amrex::Print() << "Advanced step " << step << "\n";
-
         // Write a plotfile of the current data (plot_int was defined in the inputs file)
         if (plot_int > 0 && step%plot_int == 0)
         {
@@ -335,8 +345,10 @@ void main_main ()
             WriteSingleLevelPlotfile(pltfile, s_new_mf, {"S"}, geom, time, step);
         }
 
-        printf("Time: %.6f Sum of S: %.6f\n", time, s_old_mf.sum());
-        //Print() << "Time: " << time << " Sum of S: " << s_old_mf.sum() << std::endl;
+        Real S_sum = s_old_mf.sum();
+        Print() << std::fixed << std::setprecision(8)
+                << "Time: " << std::setw(16) << time << " Sum of S: "
+                << S_sum << std::endl;
 
         if ( time >= EndTime ) { return; }
     }
