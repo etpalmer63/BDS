@@ -42,6 +42,11 @@ void main_main ()
     // time step
     Real dt;
 
+    // input of constant velocities
+    Real u_val;
+    Real v_val;
+    Real w_val;
+
     int is_conserv = 0; //default to non-conservative update
     //Array1D<const bool, 1, AMREX_SPACEDIM> is_conserv = {true, true, true};
 
@@ -75,6 +80,11 @@ void main_main ()
         pp.get("is_conserv", is_conserv);
 
         // Inputs, S old, S new, U mac, dx, dt, is_conservative
+
+        pp.get("u_val", u_val);
+        pp.get("v_val", v_val);
+        pp.get("w_val", w_val);
+
     }
 
     // **********************************
@@ -151,40 +161,42 @@ void main_main ()
 
 
     //umac is constant even in variable velocity scheme
-    umac_mf[0].setVal(1.0);
+    umac_mf[0].setVal(u_val);
+    umac_mf[1].setVal(v_val);
+    umac_mf[2].setVal(w_val);
 
-#if (AMREX_SPACEDIM > 1)
-
-    for (MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){
-
-        const Box& bx = mfi.grownnodaltilebox(1,Nghost);
-        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
-        Array4<Real> const& vmac = umac_mf[1].array(mfi);
-
-        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
-        {
-            //Real x = (i+0.5) * dx[0];
-            vmac(i,j,k) = 0.5;//  + 0.5  * std::sin(2*PI*x);
-        });
-    }
-
-#endif
-#if (AMREX_SPACEDIM > 2)
-
-    for (MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){
-
-        const Box& bx = mfi.grownnodaltilebox(2,Nghost);
-        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
-        Array4<Real> const& wmac = umac_mf[2].array(mfi);
-
-        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
-        {
-            //Real x = (i+0.5) * dx[0];
-            wmac(i,j,k) = 0.25;// + 0.25 * std::cos(2*PI*x);
-        });
-    }
-
-#endif
+//#if (AMREX_SPACEDIM > 1)
+//
+//    for (MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){
+//
+//        const Box& bx = mfi.grownnodaltilebox(1,Nghost);
+//        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
+//        Array4<Real> const& vmac = umac_mf[1].array(mfi);
+//
+//        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+//        {
+//            //Real x = (i+0.5) * dx[0];
+//            vmac(i,j,k) = 0.5;//  + 0.5  * std::sin(2*PI*x);
+//        });
+//    }
+//
+//#endif
+//#if (AMREX_SPACEDIM > 2)
+//
+//    for (MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){
+//
+//        const Box& bx = mfi.grownnodaltilebox(2,Nghost);
+//        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
+//        Array4<Real> const& wmac = umac_mf[2].array(mfi);
+//
+//        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+//        {
+//            //Real x = (i+0.5) * dx[0];
+//            wmac(i,j,k) = 0.25;// + 0.25 * std::cos(2*PI*x);
+//        });
+//    }
+//
+//#endif
 
     // Constant velocity in all directions
     //AMREX_D_DECL( umac_mf[0].setVal(1.0),
@@ -305,8 +317,10 @@ void main_main ()
         WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
 
         Print() << std::fixed << std::setprecision(8)
-                << "Time: " << std::setw(16) << time << " Sum of S: "
-                << s_old_mf.sum() << std::endl;
+                << "Time: " << std::setw(16) << time 
+		<< " Sum of S: " << std::setw(16) << s_old_mf.sum()
+          	<< " Max: " << std::setw(16) << s_old_mf.max(0) 
+          	<< " Min: " << std::setw(16) << s_old_mf.min(0) << std::endl;
     }
 
 
@@ -347,8 +361,10 @@ void main_main ()
 
         Real S_sum = s_old_mf.sum();
         Print() << std::fixed << std::setprecision(8)
-                << "Time: " << std::setw(16) << time << " Sum of S: "
-                << S_sum << std::endl;
+                << "Time: " << std::setw(16) << time 
+		<< " Sum of S: " << std::setw(16) << S_sum
+          	<< " Max: " << std::setw(16) << s_old_mf.max(0) 
+          	<< " Min: " << std::setw(16) << s_old_mf.min(0) << std::endl;
 
         if ( time >= EndTime ) { return; }
     }
