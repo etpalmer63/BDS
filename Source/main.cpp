@@ -2,6 +2,7 @@
 #include <AMReX_ParmParse.H>
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_VisMF.H>
+#include <math.h>
 
 #include "bds.H"
 
@@ -161,42 +162,63 @@ void main_main ()
 
 
     //umac is constant even in variable velocity scheme
-    umac_mf[0].setVal(u_val);
-    umac_mf[1].setVal(v_val);
-    umac_mf[2].setVal(w_val);
+    //umac_mf[0].setVal(1.0);
+    //umac_mf[0].setVal(u_val);
+    //umac_mf[1].setVal(v_val);
+    //umac_mf[2].setVal(w_val);
 
-//#if (AMREX_SPACEDIM > 1)
-//
-//    for (MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){
-//
-//        const Box& bx = mfi.grownnodaltilebox(1,Nghost);
-//        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
-//        Array4<Real> const& vmac = umac_mf[1].array(mfi);
-//
-//        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
-//        {
-//            //Real x = (i+0.5) * dx[0];
-//            vmac(i,j,k) = 0.5;//  + 0.5  * std::sin(2*PI*x);
-//        });
-//    }
-//
-//#endif
-//#if (AMREX_SPACEDIM > 2)
-//
-//    for (MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){
-//
-//        const Box& bx = mfi.grownnodaltilebox(2,Nghost);
-//        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
-//        Array4<Real> const& wmac = umac_mf[2].array(mfi);
-//
-//        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
-//        {
-//            //Real x = (i+0.5) * dx[0];
-//            wmac(i,j,k) = 0.25;// + 0.25 * std::cos(2*PI*x);
-//        });
-//    }
-//
-//#endif
+    for (MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){
+
+        const Box& bx = mfi.grownnodaltilebox(0,Nghost);
+        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
+        Array4<Real> const& umac = umac_mf[0].array(mfi);
+
+        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+        {
+            //Real x = (i+0.5) * dx[0];
+            Real y = (j+0.5) * dx[1];
+            Real z = (k+0.5) * dx[2];
+            //umac(i,j,k) = 0.5 + 0.5  * std::sin(2*PI*x);
+            umac(i,j,k) = tanh(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2))/0.333);
+
+        });
+    }
+
+#if (AMREX_SPACEDIM > 1)
+    umac_mf[1].setVal(0.25);
+
+    //for (MFIter mfi(umac_mf[1]); mfi.isValid(); ++mfi){
+
+    //    const Box& bx = mfi.grownnodaltilebox(1,Nghost);
+    //    //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
+    //    Array4<Real> const& vmac = umac_mf[1].array(mfi);
+
+    //    amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+    //    {
+    //        Real x = (i+0.5) * dx[0];
+    //        vmac(i,j,k) = 0.5 + 0.5  * std::sin(2*PI*x);
+    //    });
+    //}
+
+#endif
+#if (AMREX_SPACEDIM > 2)
+
+    for (MFIter mfi(umac_mf[2]); mfi.isValid(); ++mfi){
+
+        const Box& bx = mfi.grownnodaltilebox(2,Nghost);
+        //const Box& bx = mfi.validbox(); // HACK -- why didn't this work
+        Array4<Real> const& wmac = umac_mf[2].array(mfi);
+
+        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
+        {
+            Real x = (i+0.5) * dx[0];
+            Real y = (j+0.5) * dx[1];
+            //wmac(i,j,k) = 0.25 + 0.25 * std::cos(2*PI*x);
+            wmac(i,j,k) = 0.05 * std::exp(-15*(std::pow(x-0.5,2) + std::pow(y-0.5,2)));
+        });
+    }
+
+#endif
 
     // Constant velocity in all directions
     //AMREX_D_DECL( umac_mf[0].setVal(1.0),
@@ -265,10 +287,12 @@ void main_main ()
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
 
-            Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
+            
+            Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
+            //Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
             // Exact solution hack -- shperical step
-            //Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-1.0,2) + std::pow(z-0.75,2));
+            //Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-1.0,2) + std::pow(z-0.75,2));
             //
             //if ( r <= 0.1 ) {
             //  S_old(i,j,k) = 1.0;
@@ -276,7 +300,7 @@ void main_main ()
             //  S_old(i,j,k) = 0.0;
             //}
             //
-            //r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.0,2) + std::pow(z-0.75,2));
+            //r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.0,2) + std::pow(z-0.75,2));
             //
             //if ( r <= 0.1 ) {
             //  S_old(i,j,k) += 1.0;
