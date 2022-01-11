@@ -143,7 +143,7 @@ void main_main ()
     std::array<MultiFab, AMREX_SPACEDIM> umac_mf{AMREX_D_DECL(MultiFab(convert(ba,IntVect::TheDimensionVector(0)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(1)), dm, 3, Nghost),
                                                               MultiFab(convert(ba,IntVect::TheDimensionVector(2)), dm, 3, Nghost))};
-    
+
     // time = starting time in the simulation
     Real time = 0.0;
 
@@ -161,11 +161,15 @@ void main_main ()
 
 
 
+
     //umac is constant even in variable velocity scheme
     //umac_mf[0].setVal(1.0);
     umac_mf[0].setVal(u_val);
     umac_mf[1].setVal(v_val);
     umac_mf[2].setVal(w_val);
+
+
+
 
     for (MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){
 
@@ -178,7 +182,6 @@ void main_main ()
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
             umac(i,j,k) = tanh((0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2)))/0.333);
-
         });
     }
 
@@ -224,9 +227,9 @@ void main_main ()
     //              umac_mf[2].setVal(0.25) );
 
 
-    AMREX_D_DECL( VisMF::Write(umac_mf[0], "umac.mf"),
-                  VisMF::Write(umac_mf[1], "vmac.mf"),
-                  VisMF::Write(umac_mf[2], "wmac.mf") );
+    //AMREX_D_DECL( VisMF::Write(umac_mf[0], "umac.mf"),
+    //              VisMF::Write(umac_mf[1], "vmac.mf"),
+    //              VisMF::Write(umac_mf[2], "wmac.mf") );
 
 
     Real umac_max = amrex::max(AMREX_D_DECL(umac_mf[0].norm0(0,0),
@@ -285,7 +288,7 @@ void main_main ()
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
 
-            
+
             Real r = std::sqrt(std::pow(x-0.375,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
             //Real r = std::sqrt(std::pow(x-0.5,2) + std::pow(y-0.5,2) + std::pow(z-0.5,2));
 
@@ -315,7 +318,7 @@ void main_main ()
 #endif
             //Gaussian bump
             //S_old(i,j,k) = std::exp(-300.0*std::pow(r,2));
-            
+
             // Spherical step function
             if ( r <= 0.1 ) {
               S_old(i,j,k) = 1.0;
@@ -339,9 +342,9 @@ void main_main ()
         WriteSingleLevelPlotfile(pltfile, s_old_mf, {"S"}, geom, time, 0);
 
         Print() << std::fixed << std::setprecision(8)
-                << "Time: " << std::setw(16) << time 
+                << "Time: " << std::setw(16) << time
 		<< " Sum of S: " << std::setw(16) << s_old_mf.sum()
-          	<< " Max: " << std::setw(16) << s_old_mf.max(0) 
+          	<< " Max: " << std::setw(16) << s_old_mf.max(0)
           	<< " Min: " << std::setw(16) << s_old_mf.min(0) << std::endl;
     }
 
@@ -379,15 +382,23 @@ void main_main ()
         {
             const std::string& pltfile = amrex::Concatenate("plt",step,5);
             WriteSingleLevelPlotfile(pltfile, s_new_mf, {"S"}, geom, time, step);
+            Print() << std::fixed << std::setprecision(8)
+                << "Time: " << std::setw(16) << time
+		        << " Sum of S: " << std::setw(16) << s_old_mf.sum()
+          	    << " Max: " << std::setw(16) << s_old_mf.max(0)
+          	    << " Min: " << std::setw(16) << s_old_mf.min(0) << std::endl;
         }
 
-        Real S_sum = s_old_mf.sum();
-        Print() << std::fixed << std::setprecision(8)
-                << "Time: " << std::setw(16) << time 
-		<< " Sum of S: " << std::setw(16) << S_sum
-          	<< " Max: " << std::setw(16) << s_old_mf.max(0) 
-          	<< " Min: " << std::setw(16) << s_old_mf.min(0) << std::endl;
-
-        if ( time >= EndTime ) { return; }
+        if ( time >= EndTime )
+        {
+            const std::string& pltfile = amrex::Concatenate("plt",step,5);
+            WriteSingleLevelPlotfile(pltfile, s_new_mf, {"S"}, geom, time, step);
+            Print() << std::fixed << std::setprecision(8)
+                << "Time: " << std::setw(16) << time
+		        << " Sum of S: " << std::setw(16) << s_old_mf.sum()
+          	    << " Max: " << std::setw(16) << s_old_mf.max(0)
+          	    << " Min: " << std::setw(16) << s_old_mf.min(0) << std::endl;
+            return;
+        }
     }
 }
