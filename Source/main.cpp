@@ -163,9 +163,9 @@ void main_main ()
 
     //umac is constant even in variable velocity scheme
     //umac_mf[0].setVal(1.0);
-    umac_mf[0].setVal(u_val);
-    umac_mf[1].setVal(v_val);
-    umac_mf[2].setVal(w_val);
+    //umac_mf[0].setVal(u_val);
+    //umac_mf[1].setVal(v_val);
+    //umac_mf[2].setVal(w_val);
 
     for (MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){
 
@@ -317,12 +317,35 @@ void main_main ()
             //S_old(i,j,k) = std::exp(-300.0*std::pow(r,2));
             
             // Spherical step function
-            if ( r <= 0.1 ) {
-              S_old(i,j,k) = 1.0;
-            } else {
-              S_old(i,j,k) = 0.0;
-            }
+Real sum = 0.;
+for (int kk=0; kk<10; ++kk) {
+for (int jj=0; jj<10; ++jj) {
+for (int ii=0; ii<10; ++ii) {
+    Real zz = (k + (kk+0.5)/10.) * dx[2];
+    Real yy = (j + (jj+0.5)/10.) * dx[1];
+    Real xx = (i + (ii+0.5)/10.) * dx[0];
 
+    Real dist = std::sqrt((xx-0.375)*(xx-0.375) + (yy-0.5)*(yy-0.5) + (zz-0.5)*(zz-0.5));
+
+    if (dist < 0.1) {
+        sum = sum + 1.0;
+    } else if (dist == 0.1) {
+        sum = sum + 0.5;
+    }
+
+}
+}
+}
+
+sum /= 1000.;
+
+
+//		if ( r <= 0.1 ) {
+//              S_old(i,j,k) = 1.0;
+//            } else {
+//              S_old(i,j,k) = 0.0;
+//            }
+S_old(i,j,k) = sum;
         });
     }
 

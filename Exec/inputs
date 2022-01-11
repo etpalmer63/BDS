@@ -1,5 +1,5 @@
-n_cell = 128
-max_grid_size = 32
+n_cell = 256
+max_grid_size = 256
 
 nsteps = 100000
 plot_int = 1
@@ -7,3 +7,7 @@ plot_int = 1
 dt = 1.e-5
 
 is_conserv = 0
+
+u_val = 0.0
+v_val = 0.0
+w_val = 0.0
