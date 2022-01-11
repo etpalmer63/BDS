@@ -163,9 +163,9 @@ void main_main ()
 
     //umac is constant even in variable velocity scheme
     //umac_mf[0].setVal(1.0);
-    //umac_mf[0].setVal(u_val);
-    //umac_mf[1].setVal(v_val);
-    //umac_mf[2].setVal(w_val);
+    umac_mf[0].setVal(u_val);
+    umac_mf[1].setVal(v_val);
+    umac_mf[2].setVal(w_val);
 
     for (MFIter mfi(umac_mf[0]); mfi.isValid(); ++mfi){
 
@@ -175,11 +175,9 @@ void main_main ()
 
         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k)
         {
-            //Real x = (i+0.5) * dx[0];
             Real y = (j+0.5) * dx[1];
             Real z = (k+0.5) * dx[2];
-            //umac(i,j,k) = 0.5 + 0.5  * std::sin(2*PI*x);
-            umac(i,j,k) = tanh(0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2))/0.333);
+            umac(i,j,k) = tanh((0.15 - std::sqrt( std::pow(y-0.5,2) + std::pow(z-0.5,2)))/0.333);
 
         });
     }
